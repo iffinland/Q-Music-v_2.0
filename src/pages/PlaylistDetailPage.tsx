@@ -22,7 +22,8 @@ import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
-import { useEngagement } from '../hooks/useEngagement';
+import { useEntityComments } from '../hooks/useEntityComments';
+import { useEntityLikes } from '../hooks/useEntityLikes';
 import { useMediaPublish } from '../hooks/useMediaPublish';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { usePlaylistDetail } from '../hooks/usePlaylistDetail';
@@ -65,29 +66,37 @@ export const PlaylistDetailPage = () => {
   const {
     likeCount,
     hasLike,
-    comments,
-    hiddenCommentIds,
-    isModerator,
-    isLoading: engagementLoading,
-    error: engagementError,
+    isLoading: likesLoading,
+    error: likesError,
     isUpdatingLike,
-    isSubmittingComment,
-    isEditingComment,
-    isModerating,
     toggleLike,
-    addComment,
-    removeComment,
-    editComment,
-    toggleCommentVisibility,
-    canLoadMoreComments,
-    loadMoreComments,
-  } = useEngagement({
+  } = useEntityLikes({
     entityType: 'playlist',
     entityId: playlist?.identifier,
     entityPublisher: playlist?.publisher,
     title: playlist?.title,
     enabled: Boolean(playlist?.identifier && playlist?.publisher),
   });
+  const {
+    comments,
+    isLoading: commentsLoading,
+    error: commentsError,
+    isSubmittingComment,
+    isEditingComment,
+    addComment,
+    removeComment,
+    editComment,
+    canLoadMoreComments,
+    loadMoreComments,
+  } = useEntityComments({
+    entityType: 'playlist',
+    entityId: playlist?.identifier,
+    entityPublisher: playlist?.publisher,
+    title: playlist?.title,
+    enabled: Boolean(playlist?.identifier && playlist?.publisher),
+  });
+  const engagementLoading = likesLoading || commentsLoading;
+  const engagementError = likesError || commentsError;
 
   useEffect(() => {
     setOrderedSongs(playlist?.songs || []);
@@ -406,21 +415,14 @@ export const PlaylistDetailPage = () => {
           <Stack spacing={1.25}>
             <CommentSection
               comments={comments}
-              hiddenCommentIds={hiddenCommentIds}
-              isModerator={isModerator}
               currentUser={auth?.name || undefined}
-              ownerName={playlist.publisher}
-              isLoading={engagementLoading}
+              isLoading={commentsLoading}
               isSubmittingComment={isSubmittingComment}
               isEditingComment={isEditingComment}
-              isModerating={isModerating}
               onAddComment={(message) => addComment(message)}
               onReply={(commentId, message) => addComment(message, commentId)}
               onEdit={(comment, message) => editComment(comment, message)}
               onDelete={(comment) => removeComment(comment)}
-              onToggleVisibility={(commentId) =>
-                toggleCommentVisibility(commentId)
-              }
               canLoadMore={canLoadMoreComments}
               onLoadMore={loadMoreComments}
             />

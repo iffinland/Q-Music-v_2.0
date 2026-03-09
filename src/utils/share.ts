@@ -1,7 +1,3 @@
-interface QortalWindow extends Window {
-  _qdnBase?: string;
-}
-
 const trimSlashes = (value: string) => value.replace(/^\/+|\/+$/g, '');
 
 export const buildShareLink = (location: Location = window.location) => {
@@ -9,7 +5,7 @@ export const buildShareLink = (location: Location = window.location) => {
     return '';
   }
 
-  const qortalWindow = window as QortalWindow;
+  const qortalWindow = window as Window & { _qdnBase?: string };
   const qdnBase = qortalWindow._qdnBase;
 
   if (typeof qdnBase === 'string' && qdnBase.startsWith('/render/')) {

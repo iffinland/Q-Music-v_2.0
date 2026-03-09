@@ -3,18 +3,12 @@ import { useGlobal } from 'qapp-core';
 import {
   deleteComment,
   fetchComments,
-  fetchLikeCount,
-  fetchModerationState,
-  hasUserLiked,
-  likeEntity,
   publishComment,
-  saveModerationState,
-  unlikeEntity,
   updateComment,
-} from '../services/engagement';
+} from '../services/entityComments';
 import type { MediaComment } from '../types/engagement';
 
-export const useEngagement = (params: {
+export const useEntityComments = (params: {
   entityType: 'song' | 'playlist';
   entityId?: string;
   entityPublisher?: string;
@@ -23,29 +17,16 @@ export const useEngagement = (params: {
 }) => {
   const COMMENT_PAGE_SIZE = 5;
   const { auth } = useGlobal();
-  const [likeCount, setLikeCount] = useState(0);
-  const [hasLike, setHasLike] = useState(false);
   const [comments, setComments] = useState<MediaComment[]>([]);
-  const [hiddenCommentIds, setHiddenCommentIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isUpdatingLike, setIsUpdatingLike] = useState(false);
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isEditingComment, setIsEditingComment] = useState(false);
-  const [isModerating, setIsModerating] = useState(false);
   const [commentLimit, setCommentLimit] = useState(COMMENT_PAGE_SIZE);
-  const isModerator =
-    Boolean(auth?.name) &&
-    Boolean(params.entityPublisher) &&
-    auth?.name?.toLowerCase() === params.entityPublisher?.toLowerCase();
 
-  const refresh = useCallback(async () => {
-    if (!params.enabled) {
-      setIsLoading(false);
-      return;
-    }
-
-    if (!params.entityId || !params.entityPublisher) {
+  const refreshComments = useCallback(async () => {
+    if (!params.enabled || !params.entityId || !params.entityPublisher) {
+      setComments([]);
       setIsLoading(false);
       return;
     }
@@ -53,37 +34,20 @@ export const useEngagement = (params: {
     setIsLoading(true);
     setError(null);
     try {
-      const [count, loadedComments, liked, moderationState] = await Promise.all(
-        [
-          fetchLikeCount(params.entityType, params.entityId),
-          fetchComments(
-            params.entityType,
-            params.entityPublisher,
-            params.entityId,
-            { limit: commentLimit }
-          ),
-          auth?.name
-            ? hasUserLiked(params.entityType, auth.name, params.entityId)
-            : Promise.resolve(false),
-          fetchModerationState(
-            params.entityType,
-            params.entityPublisher,
-            params.entityId
-          ),
-        ]
+      const loadedComments = await fetchComments(
+        params.entityType,
+        params.entityPublisher,
+        params.entityId,
+        { limit: commentLimit }
       );
-
-      setLikeCount(count);
       setComments(loadedComments);
-      setHasLike(liked);
-      setHiddenCommentIds(moderationState.hiddenCommentIds);
     } catch {
-      setError('Failed to load comments, likes and moderation state.');
+      setComments([]);
+      setError('Failed to load comments.');
     } finally {
       setIsLoading(false);
     }
   }, [
-    auth?.name,
     commentLimit,
     params.enabled,
     params.entityId,
@@ -93,65 +57,19 @@ export const useEngagement = (params: {
 
   useEffect(() => {
     if (!params.enabled) {
+      setComments([]);
       setIsLoading(false);
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      void refresh();
+      void refreshComments();
     }, 200);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [params.enabled, refresh]);
-
-  const toggleLike = useCallback(async () => {
-    if (
-      !auth?.name ||
-      !params.entityId ||
-      !params.entityPublisher ||
-      !params.title
-    ) {
-      setError('Log in to use likes.');
-      return;
-    }
-
-    setIsUpdatingLike(true);
-    setError(null);
-    try {
-      if (hasLike) {
-        await unlikeEntity(params.entityType, auth.name, params.entityId);
-        setHasLike(false);
-        setLikeCount((value) => Math.max(0, value - 1));
-      } else {
-        await likeEntity({
-          entityType: params.entityType,
-          username: auth.name,
-          entityId: params.entityId,
-          entityPublisher: params.entityPublisher,
-          title: params.title,
-        });
-        setHasLike(true);
-        setLikeCount((value) => value + 1);
-      }
-    } catch (likeError) {
-      setError(
-        likeError instanceof Error
-          ? likeError.message
-          : 'Failed to update like status.'
-      );
-    } finally {
-      setIsUpdatingLike(false);
-    }
-  }, [
-    auth?.name,
-    hasLike,
-    params.entityId,
-    params.entityPublisher,
-    params.entityType,
-    params.title,
-  ]);
+  }, [params.enabled, refreshComments]);
 
   const addComment = useCallback(
     async (message: string, parentId?: string) => {
@@ -183,7 +101,7 @@ export const useEngagement = (params: {
           title: params.title,
           parentId,
         });
-        await refresh();
+        await refreshComments();
         return true;
       } catch (commentError) {
         setError(
@@ -202,7 +120,7 @@ export const useEngagement = (params: {
       params.entityPublisher,
       params.entityType,
       params.title,
-      refresh,
+      refreshComments,
     ]
   );
 
@@ -215,7 +133,7 @@ export const useEngagement = (params: {
 
       try {
         await deleteComment(comment.author, comment.id);
-        await refresh();
+        await refreshComments();
         return true;
       } catch (deleteError) {
         setError(
@@ -226,7 +144,7 @@ export const useEngagement = (params: {
         return false;
       }
     },
-    [auth?.name, refresh]
+    [auth?.name, refreshComments]
   );
 
   const editComment = useCallback(
@@ -262,7 +180,7 @@ export const useEngagement = (params: {
           parentId: comment.parentId,
           created: comment.created,
         });
-        await refresh();
+        await refreshComments();
         return true;
       } catch (updateError) {
         setError(
@@ -281,77 +199,20 @@ export const useEngagement = (params: {
       params.entityPublisher,
       params.entityType,
       params.title,
-      refresh,
-    ]
-  );
-
-  const toggleCommentVisibility = useCallback(
-    async (commentId: string) => {
-      if (
-        !auth?.name ||
-        !params.entityId ||
-        !params.entityPublisher ||
-        !isModerator
-      ) {
-        setError('Only the owner can moderate comments.');
-        return false;
-      }
-
-      setIsModerating(true);
-      setError(null);
-      try {
-        const nextHidden = hiddenCommentIds.includes(commentId)
-          ? hiddenCommentIds.filter((entry) => entry !== commentId)
-          : [...hiddenCommentIds, commentId];
-
-        await saveModerationState({
-          entityType: params.entityType,
-          entityId: params.entityId,
-          entityPublisher: params.entityPublisher,
-          moderator: auth.name,
-          hiddenCommentIds: nextHidden,
-        });
-        setHiddenCommentIds(nextHidden);
-        return true;
-      } catch (moderationError) {
-        setError(
-          moderationError instanceof Error
-            ? moderationError.message
-            : 'Failed to update moderation.'
-        );
-        return false;
-      } finally {
-        setIsModerating(false);
-      }
-    },
-    [
-      auth?.name,
-      hiddenCommentIds,
-      isModerator,
-      params.entityId,
-      params.entityPublisher,
-      params.entityType,
+      refreshComments,
     ]
   );
 
   return {
-    likeCount,
-    hasLike,
     comments,
-    hiddenCommentIds,
-    isModerator,
     isLoading,
     error,
-    isUpdatingLike,
     isSubmittingComment,
     isEditingComment,
-    isModerating,
-    toggleLike,
     addComment,
     removeComment,
     editComment,
-    toggleCommentVisibility,
-    refresh,
+    refreshComments,
     commentLimit,
     canLoadMoreComments: comments.length >= commentLimit,
     loadMoreComments: () =>

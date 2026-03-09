@@ -15,7 +15,8 @@ import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
-import { useEngagement } from '../hooks/useEngagement';
+import { useEntityComments } from '../hooks/useEntityComments';
+import { useEntityLikes } from '../hooks/useEntityLikes';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { useQdnResource } from '../hooks/useQdnResource';
@@ -54,29 +55,37 @@ export const SongDetailPage = () => {
   const {
     likeCount,
     hasLike,
-    comments,
-    hiddenCommentIds,
-    isModerator,
-    isLoading: engagementLoading,
-    error: engagementError,
+    isLoading: likesLoading,
+    error: likesError,
     isUpdatingLike,
-    isSubmittingComment,
-    isEditingComment,
-    isModerating,
     toggleLike,
-    addComment,
-    removeComment,
-    editComment,
-    toggleCommentVisibility,
-    canLoadMoreComments,
-    loadMoreComments,
-  } = useEngagement({
+  } = useEntityLikes({
     entityType: 'song',
     entityId: song?.identifier,
     entityPublisher: song?.publisher,
     title: song?.title,
     enabled: Boolean(song?.identifier && song?.publisher),
   });
+  const {
+    comments,
+    isLoading: commentsLoading,
+    error: commentsError,
+    isSubmittingComment,
+    isEditingComment,
+    addComment,
+    removeComment,
+    editComment,
+    canLoadMoreComments,
+    loadMoreComments,
+  } = useEntityComments({
+    entityType: 'song',
+    entityId: song?.identifier,
+    entityPublisher: song?.publisher,
+    title: song?.title,
+    enabled: Boolean(song?.identifier && song?.publisher),
+  });
+  const engagementLoading = likesLoading || commentsLoading;
+  const engagementError = likesError || commentsError;
 
   const handlePlay = () => {
     if (!song) return;
@@ -234,21 +243,14 @@ export const SongDetailPage = () => {
           <Stack spacing={1.25}>
             <CommentSection
               comments={comments}
-              hiddenCommentIds={hiddenCommentIds}
-              isModerator={isModerator}
               currentUser={auth?.name || undefined}
-              ownerName={song.publisher}
-              isLoading={engagementLoading}
+              isLoading={commentsLoading}
               isSubmittingComment={isSubmittingComment}
               isEditingComment={isEditingComment}
-              isModerating={isModerating}
               onAddComment={(message) => addComment(message)}
               onReply={(commentId, message) => addComment(message, commentId)}
               onEdit={(comment, message) => editComment(comment, message)}
               onDelete={(comment) => removeComment(comment)}
-              onToggleVisibility={(commentId) =>
-                toggleCommentVisibility(commentId)
-              }
               canLoadMore={canLoadMoreComments}
               onLoadMore={loadMoreComments}
             />

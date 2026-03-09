@@ -1,31 +1,21 @@
 import {
   Button,
-  Chip,
   Divider,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
-import {
-  EditRounded,
-  ReplyRounded,
-  VisibilityOffRounded,
-  VisibilityRounded,
-} from '@mui/icons-material';
+import { EditRounded, ReplyRounded } from '@mui/icons-material';
 import { useMemo, useState } from 'react';
 import type { MediaComment } from '../../types/engagement';
 
 interface CommentSectionProps {
   title?: string;
   comments: MediaComment[];
-  hiddenCommentIds: string[];
-  isModerator: boolean;
   currentUser?: string;
-  ownerName?: string;
   isLoading?: boolean;
   isSubmittingComment?: boolean;
   isEditingComment?: boolean;
-  isModerating?: boolean;
   canLoadMore?: boolean;
   onAddComment: (message: string) => Promise<boolean> | boolean;
   onReply: (commentId: string, message: string) => Promise<boolean> | boolean;
@@ -34,27 +24,21 @@ interface CommentSectionProps {
     message: string
   ) => Promise<boolean> | boolean;
   onDelete: (comment: MediaComment) => Promise<boolean> | boolean;
-  onToggleVisibility: (commentId: string) => Promise<boolean> | boolean;
   onLoadMore?: () => void;
 }
 
 export const CommentSection = ({
   title = 'Comments',
   comments,
-  hiddenCommentIds,
-  isModerator,
   currentUser,
-  ownerName,
   isLoading,
   isSubmittingComment,
   isEditingComment,
-  isModerating,
   canLoadMore,
   onAddComment,
   onReply,
   onEdit,
   onDelete,
-  onToggleVisibility,
   onLoadMore,
 }: CommentSectionProps) => {
   const [commentDraft, setCommentDraft] = useState('');
@@ -74,10 +58,7 @@ export const CommentSection = ({
   );
 
   const commentGroups = useMemo(() => {
-    const visibleComments = comments.filter(
-      (comment) => isModerator || !hiddenCommentIds.includes(comment.id)
-    );
-    const repliesByParent = visibleComments.reduce<
+    const repliesByParent = comments.reduce<
       Record<string, MediaComment[]>
     >((accumulator, comment) => {
       if (!comment.parentId) {
@@ -88,7 +69,7 @@ export const CommentSection = ({
       return accumulator;
     }, {});
 
-    return visibleComments
+    return comments
       .filter((comment) => !comment.parentId)
       .map((comment) => ({
         comment,
@@ -96,7 +77,7 @@ export const CommentSection = ({
           (left, right) => left.created - right.created
         ),
       }));
-  }, [comments, hiddenCommentIds, isModerator]);
+  }, [comments]);
 
   const handleAddComment = async () => {
     const wasPublished = await onAddComment(commentDraft);
@@ -204,15 +185,7 @@ export const CommentSection = ({
                 justifyContent="space-between"
                 spacing={0.5}
               >
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  <Typography variant="subtitle2">{comment.author}</Typography>
-                  {comment.author === ownerName ? (
-                    <Chip label="Creator" size="small" />
-                  ) : null}
-                  {hiddenCommentIds.includes(comment.id) ? (
-                    <Chip label="Hidden" size="small" color="warning" />
-                  ) : null}
-                </Stack>
+                <Typography variant="subtitle2">{comment.author}</Typography>
                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                   {dateFormatter.format(comment.created)}
                 </Typography>
@@ -259,23 +232,6 @@ export const CommentSection = ({
                       Delete
                     </Button>
                   </>
-                ) : null}
-                {isModerator ? (
-                  <Button
-                    variant="text"
-                    size="small"
-                    disabled={isModerating}
-                    startIcon={
-                      hiddenCommentIds.includes(comment.id) ? (
-                        <VisibilityRounded fontSize="small" />
-                      ) : (
-                        <VisibilityOffRounded fontSize="small" />
-                      )
-                    }
-                    onClick={() => void onToggleVisibility(comment.id)}
-                  >
-                    {hiddenCommentIds.includes(comment.id) ? 'Restore' : 'Hide'}
-                  </Button>
                 ) : null}
               </Stack>
 
