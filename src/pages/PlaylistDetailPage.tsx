@@ -31,7 +31,7 @@ import { useLibrary } from '../hooks/useLibrary';
 import type { PlaylistSongReference } from '../types/media';
 import { emitMediaRefresh } from '../utils/mediaEvents';
 import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
-import { copyToClipboard } from '../utils/share';
+import { buildShareLink, copyToClipboard } from '../utils/share';
 
 export const PlaylistDetailPage = () => {
   const { name, playlistId } = useParams();
@@ -196,7 +196,7 @@ export const PlaylistDetailPage = () => {
   };
 
   const handleShare = async () => {
-    await copyToClipboard(window.location.href);
+    await copyToClipboard(buildShareLink());
     setSaveMessage('Playlist link copied.');
   };
 

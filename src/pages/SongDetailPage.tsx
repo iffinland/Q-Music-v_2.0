@@ -20,7 +20,7 @@ import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { useQdnResource } from '../hooks/useQdnResource';
 import { useSongDetail } from '../hooks/useSongDetail';
 import { formatSongCardMetadata } from '../utils/songMetadata';
-import { copyToClipboard } from '../utils/share';
+import { buildShareLink, copyToClipboard } from '../utils/share';
 
 export const SongDetailPage = () => {
   const { auth } = useGlobal();
@@ -98,7 +98,7 @@ export const SongDetailPage = () => {
   };
 
   const handleShare = async () => {
-    await copyToClipboard(window.location.href);
+    await copyToClipboard(buildShareLink());
   };
 
   return (
