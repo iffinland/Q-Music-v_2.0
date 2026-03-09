@@ -1,4 +1,9 @@
-import { MenuRounded, QueueMusicRounded } from '@mui/icons-material';
+import {
+  DarkModeRounded,
+  LightModeRounded,
+  MenuRounded,
+  QueueMusicRounded,
+} from '@mui/icons-material';
 import {
   AppBar,
   Box,
@@ -18,10 +23,11 @@ import {
 import { useGlobal } from 'qapp-core';
 import { useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useAtomValue } from 'jotai';
+import { useAtom } from 'jotai';
 import { useIframe } from '../../hooks/useIframeListener';
 import { librarySyncStateAtom } from '../../state/library';
 import { queueLengthAtom } from '../../state/player';
+import { EnumTheme, themeAtom } from '../../state/global/system';
 import { LibrarySync } from './LibrarySync';
 import { FloatingMiniPlayer } from '../player/FloatingMiniPlayer';
 
@@ -49,8 +55,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        background:
-          'linear-gradient(180deg, rgba(4,8,14,0.98) 0%, rgba(9,18,33,0.98) 48%, rgba(4,8,14,1) 100%)',
+        background: 'var(--qm-panel-bg)',
       }}
     >
       <Box sx={{ px: 2.5, py: 3 }}>
@@ -84,7 +89,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
                 borderRadius: 2,
                 mb: 0.5,
                 '&.Mui-selected': {
-                  backgroundColor: 'rgba(100,155,240,0.18)',
+                  backgroundColor: 'var(--qm-primary-soft)',
                 },
               }}
             >
@@ -104,7 +109,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             border: '1px solid',
             borderColor: 'divider',
             p: 2,
-            background: 'rgba(255,255,255,0.03)',
+            backgroundColor: 'var(--qm-surface-soft)',
           }}
         >
           <Stack spacing={1}>
@@ -148,16 +153,17 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
 export const AppShell = ({ children }: AppShellProps) => {
   useIframe();
   const { auth } = useGlobal();
-  const queueLength = useAtomValue(queueLengthAtom);
-  const librarySyncState = useAtomValue(librarySyncStateAtom);
+  const queueLength = useAtom(queueLengthAtom)[0];
+  const librarySyncState = useAtom(librarySyncStateAtom)[0];
+  const [theme, setTheme] = useAtom(themeAtom);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isLightTheme = theme === EnumTheme.LIGHT;
 
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background:
-          'radial-gradient(circle at top, rgba(44,87,168,0.2), transparent 30%), linear-gradient(180deg, #060b14 0%, #0b1422 48%, #07111d 100%)',
+        background: 'var(--qm-shell-bg)',
       }}
     >
       <AppBar
@@ -166,7 +172,8 @@ export const AppShell = ({ children }: AppShellProps) => {
         elevation={0}
         sx={{
           backdropFilter: 'blur(14px)',
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
         }}
       >
         <Toolbar sx={{ gap: 1.5 }}>
@@ -205,6 +212,22 @@ export const AppShell = ({ children }: AppShellProps) => {
                 variant="outlined"
               />
             ) : null}
+            <IconButton
+              color="inherit"
+              onClick={() =>
+                setTheme(isLightTheme ? EnumTheme.DARK : EnumTheme.LIGHT)
+              }
+              aria-label={
+                isLightTheme ? 'Switch to dark theme' : 'Switch to light theme'
+              }
+              sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+                bgcolor: 'var(--qm-surface-soft)',
+              }}
+            >
+              {isLightTheme ? <DarkModeRounded /> : <LightModeRounded />}
+            </IconButton>
             <Chip
               label={auth?.name ? `@${auth.name}` : 'Guest mode'}
               color="primary"
@@ -232,7 +255,8 @@ export const AppShell = ({ children }: AppShellProps) => {
             width: { md: drawerWidth },
             flexShrink: 0,
             display: { xs: 'none', md: 'block' },
-            borderRight: '1px solid rgba(255,255,255,0.08)',
+            borderRight: '1px solid',
+            borderColor: 'divider',
           }}
         >
           <Box

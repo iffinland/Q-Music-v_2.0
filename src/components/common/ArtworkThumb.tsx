@@ -94,8 +94,7 @@ export const ArtworkThumb = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background:
-          'linear-gradient(135deg, rgba(21,52,102,0.35) 0%, rgba(11,16,24,0.9) 100%)',
+        background: 'var(--qm-thumb-bg)',
       }}
     >
       <Typography

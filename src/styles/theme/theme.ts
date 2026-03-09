@@ -1,4 +1,4 @@
-import { createTheme } from '@mui/material/styles';
+import { alpha, createTheme } from '@mui/material/styles';
 
 const commonThemeOptions = {
   typography: {
@@ -54,17 +54,34 @@ const commonThemeOptions = {
       xl: 1536,
     },
   },
-  MuiDialog: {
-    styleOverrides: {
-      paper: {
-        backgroundImage: 'none',
+  components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          transition:
+            'background-color 180ms ease, color 180ms ease, border-color 180ms ease',
+        },
       },
     },
-  },
-  MuiPopover: {
-    styleOverrides: {
-      paper: {
-        backgroundImage: 'none',
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiPopover: {
+      styleOverrides: {
+        paper: {
+          backgroundImage: 'none',
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          backgroundImage: 'none',
+        },
       },
     },
   },
@@ -75,20 +92,94 @@ const lightTheme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: 'rgb(63, 81, 181)',
-      dark: 'rgb(113, 198, 212)',
-      light: 'rgb(180, 200, 235)',
+      main: '#2563eb',
+      dark: '#1d4ed8',
+      light: '#60a5fa',
+      contrastText: '#eff6ff',
     },
     secondary: {
-      main: 'rgba(194, 222, 236, 1)',
+      main: '#0ea5e9',
+      dark: '#0284c7',
+      light: '#7dd3fc',
     },
     background: {
-      default: 'rgba(250, 250, 250, 1)',
-      paper: 'rgb(220, 220, 220)', // darker card background
+      default: '#eaf2ff',
+      paper: '#ffffff',
     },
     text: {
-      primary: 'rgba(0, 0, 0, 0.87)', // 87% black (slightly softened)
-      secondary: 'rgba(0, 0, 0, 0.6)', // 60% black
+      primary: '#102033',
+      secondary: '#49627f',
+    },
+    divider: 'rgba(37, 99, 235, 0.18)',
+  },
+  shape: {
+    borderRadius: 18,
+  },
+  components: {
+    ...commonThemeOptions.components,
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: alpha('#ffffff', 0.74),
+        },
+      },
+    },
+    MuiButton: {
+      defaultProps: {
+        disableElevation: true,
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: 14,
+          textTransform: 'none',
+          fontWeight: 700,
+          transition:
+            'transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease',
+          '&:hover': {
+            transform: 'translateY(-1px)',
+          },
+        },
+        containedPrimary: {
+          boxShadow: `0 14px 28px ${alpha('#2563eb', 0.22)}`,
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          borderRadius: 24,
+          boxShadow: `0 18px 40px ${alpha('#7ba6de', 0.18)}`,
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          borderRadius: 999,
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          backgroundColor: alpha('#ffffff', 0.72),
+          borderRadius: 16,
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: alpha('#2563eb', 0.4),
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderWidth: 1,
+          },
+        },
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: {
+          borderRadius: 999,
+          overflow: 'hidden',
+        },
+      },
     },
   },
 });
@@ -98,20 +189,94 @@ const darkTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: 'rgb(100, 155, 240)',
-      dark: 'rgb(45, 92, 201)',
-      light: 'rgb(130, 185, 255)',
+      main: '#38bdf8',
+      dark: '#0ea5e9',
+      light: '#93c5fd',
+      contrastText: '#03111f',
     },
     secondary: {
-      main: 'rgb(69, 173, 255)',
+      main: '#2563eb',
+      dark: '#1d4ed8',
+      light: '#60a5fa',
     },
     background: {
-      default: 'rgb(49, 51, 56)',
-      paper: 'rgb(62, 64, 68)',
+      default: '#07111d',
+      paper: '#0f1c30',
     },
     text: {
-      primary: 'rgb(255, 255, 255)',
-      secondary: 'rgb(179, 179, 179)',
+      primary: '#e6f1ff',
+      secondary: '#93accb',
+    },
+    divider: 'rgba(96, 165, 250, 0.18)',
+  },
+  shape: {
+    borderRadius: 18,
+  },
+  components: {
+    ...commonThemeOptions.components,
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          backgroundColor: alpha('#07111d', 0.78),
+        },
+      },
+    },
+    MuiButton: {
+      defaultProps: {
+        disableElevation: true,
+      },
+      styleOverrides: {
+        root: {
+          borderRadius: 14,
+          textTransform: 'none',
+          fontWeight: 700,
+          transition:
+            'transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease',
+          '&:hover': {
+            transform: 'translateY(-1px)',
+          },
+        },
+        containedPrimary: {
+          boxShadow: `0 16px 32px ${alpha('#0ea5e9', 0.22)}`,
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          borderRadius: 24,
+          boxShadow: `0 18px 40px ${alpha('#020617', 0.45)}`,
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
+          borderRadius: 999,
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          backgroundColor: alpha('#ffffff', 0.04),
+          borderRadius: 16,
+          '&:hover .MuiOutlinedInput-notchedOutline': {
+            borderColor: alpha('#7dd3fc', 0.42),
+          },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+            borderWidth: 1,
+          },
+        },
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: {
+          borderRadius: 999,
+          overflow: 'hidden',
+        },
+      },
     },
   },
 });

@@ -127,7 +127,7 @@ const CropPreview = ({
           borderRadius: 2,
           border: '1px solid',
           borderColor: 'divider',
-          backgroundColor: 'rgba(255,255,255,0.04)',
+          backgroundColor: 'var(--qm-surface-soft)',
           cursor: 'grab',
           touchAction: 'none',
         }}
@@ -152,8 +152,8 @@ const CropPreview = ({
           sx={{
             position: 'absolute',
             inset: 0,
-            border: '1px solid rgba(255,255,255,0.3)',
-            boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.35)',
+            border: '1px solid var(--qm-border-strong)',
+            boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)',
             pointerEvents: 'none',
           }}
         />
@@ -164,7 +164,7 @@ const CropPreview = ({
             top: 0,
             bottom: 0,
             width: 1,
-            backgroundColor: 'rgba(255,255,255,0.2)',
+            backgroundColor: 'var(--qm-border-strong)',
             pointerEvents: 'none',
           }}
         />
@@ -175,7 +175,7 @@ const CropPreview = ({
             top: 0,
             bottom: 0,
             width: 1,
-            backgroundColor: 'rgba(255,255,255,0.2)',
+            backgroundColor: 'var(--qm-border-strong)',
             pointerEvents: 'none',
           }}
         />
@@ -186,7 +186,7 @@ const CropPreview = ({
             left: 0,
             right: 0,
             height: 1,
-            backgroundColor: 'rgba(255,255,255,0.2)',
+            backgroundColor: 'var(--qm-border-strong)',
             pointerEvents: 'none',
           }}
         />
@@ -197,7 +197,7 @@ const CropPreview = ({
             left: 0,
             right: 0,
             height: 1,
-            backgroundColor: 'rgba(255,255,255,0.2)',
+            backgroundColor: 'var(--qm-border-strong)',
             pointerEvents: 'none',
           }}
         />
@@ -501,8 +501,7 @@ export const PublishPage = () => {
               borderColor: 'divider',
               borderRadius: 3,
               p: 3,
-              background:
-                'linear-gradient(180deg, rgba(18,24,33,0.9) 0%, rgba(11,16,24,0.98) 100%)',
+              background: 'var(--qm-panel-bg)',
             }}
           >
             <Stack spacing={2}>
@@ -636,8 +635,7 @@ export const PublishPage = () => {
               borderColor: 'divider',
               borderRadius: 3,
               p: 3,
-              background:
-                'linear-gradient(180deg, rgba(18,24,33,0.9) 0%, rgba(11,16,24,0.98) 100%)',
+              background: 'var(--qm-panel-bg)',
             }}
           >
             <Stack spacing={2}>
@@ -738,7 +736,7 @@ export const PublishPage = () => {
                     borderRadius: 2.5,
                     px: 1.5,
                     py: 1.25,
-                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    backgroundColor: 'var(--qm-surface-soft)',
                   }}
                 >
                   <Typography variant="subtitle2">Selected order</Typography>

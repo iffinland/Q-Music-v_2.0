@@ -145,7 +145,7 @@ export const SongDetailPage = () => {
                     borderRadius: 4,
                     border: '1px solid',
                     borderColor: 'divider',
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+                    boxShadow: 'var(--qm-shadow-soft)',
                   }}
                 />
                 {artworkLoading ? (

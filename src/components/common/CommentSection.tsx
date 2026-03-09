@@ -152,7 +152,7 @@ export const CommentSection = ({
           borderRadius: 3,
           px: { xs: 1.5, sm: 2 },
           py: 1.5,
-          backgroundColor: 'rgba(255,255,255,0.02)',
+          backgroundColor: 'var(--qm-surface-soft)',
         }}
       >
         <TextField
@@ -196,7 +196,7 @@ export const CommentSection = ({
                 borderRadius: 3,
                 px: { xs: 1.5, sm: 2 },
                 py: 1.35,
-                backgroundColor: 'rgba(255,255,255,0.015)',
+                backgroundColor: 'var(--qm-surface-soft)',
               }}
             >
               <Stack

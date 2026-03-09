@@ -26,15 +26,14 @@ export const SectionCard = ({
         borderColor: 'divider',
         borderRadius: 3.5,
         p: 2.75,
-        background:
-          'linear-gradient(180deg, rgba(18,24,33,0.9) 0%, rgba(11,16,24,0.98) 100%)',
-        boxShadow: '0 18px 44px rgba(4, 11, 24, 0.18)',
+        background: 'var(--qm-panel-bg)',
+        boxShadow: 'var(--qm-shadow-soft)',
         transition:
           'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
         '&:hover': {
           transform: 'translateY(-2px)',
-          borderColor: 'rgba(144, 202, 249, 0.38)',
-          boxShadow: '0 24px 52px rgba(4, 11, 24, 0.26)',
+          borderColor: 'var(--qm-border-strong)',
+          boxShadow: 'var(--qm-shadow-strong)',
         },
       }}
     >

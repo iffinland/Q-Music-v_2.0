@@ -22,9 +22,8 @@ export const PageHero = ({
         borderRadius: 4,
         px: { xs: 2.5, md: 4 },
         py: { xs: 3, md: 3.75 },
-        background:
-          'linear-gradient(135deg, rgba(13,25,48,0.96) 0%, rgba(21,52,102,0.92) 48%, rgba(6,12,26,0.98) 100%)',
-        boxShadow: '0 24px 60px rgba(4, 11, 24, 0.28)',
+        background: 'var(--qm-hero-bg)',
+        boxShadow: 'var(--qm-shadow-strong)',
       }}
     >
       <Stack spacing={2}>

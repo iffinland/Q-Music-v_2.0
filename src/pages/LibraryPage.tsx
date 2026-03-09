@@ -156,7 +156,7 @@ export const LibraryPage = () => {
                 borderColor: 'divider',
                 borderRadius: 3,
                 p: 2,
-                backgroundColor: 'rgba(255,255,255,0.02)',
+                backgroundColor: 'var(--qm-surface-soft)',
               }}
             >
               {item}

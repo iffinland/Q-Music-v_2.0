@@ -243,7 +243,7 @@ export const PlaylistDetailPage = () => {
                     borderRadius: 4,
                     border: '1px solid',
                     borderColor: 'divider',
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
+                    boxShadow: 'var(--qm-shadow-soft)',
                   }}
                 />
                 {artworkLoading ? (
@@ -359,7 +359,7 @@ export const PlaylistDetailPage = () => {
                   borderRadius: 3,
                   px: { xs: 1.5, sm: 2 },
                   py: 1.25,
-                  backgroundColor: 'rgba(255,255,255,0.015)',
+                  backgroundColor: 'var(--qm-surface-soft)',
                 }}
               >
                 <Stack spacing={0.35}>

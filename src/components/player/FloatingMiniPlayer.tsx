@@ -331,8 +331,8 @@ export const FloatingMiniPlayer = () => {
         px: 2,
         py: 1.5,
         backdropFilter: 'blur(22px)',
-        background: 'rgba(7, 12, 20, 0.92)',
-        boxShadow: '0 18px 45px rgba(0,0,0,0.35)',
+        background: 'var(--qm-panel-bg)',
+        boxShadow: 'var(--qm-shadow-strong)',
       }}
     >
       {playerError ? (
@@ -477,7 +477,7 @@ export const FloatingMiniPlayer = () => {
             sx={{
               height: 6,
               borderRadius: 999,
-              backgroundColor: 'rgba(255,255,255,0.08)',
+              backgroundColor: 'var(--qm-surface-soft-strong)',
             }}
           />
         </Stack>
@@ -489,7 +489,7 @@ export const FloatingMiniPlayer = () => {
           mt: 1.5,
           height: 6,
           borderRadius: 999,
-          backgroundColor: 'rgba(255,255,255,0.08)',
+          backgroundColor: 'var(--qm-surface-soft-strong)',
         }}
       />
     </Box>
