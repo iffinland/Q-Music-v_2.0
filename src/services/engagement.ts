@@ -209,9 +209,11 @@ export const unlikeEntity = async (
 export const fetchComments = async (
   entityType: 'song' | 'playlist',
   entityPublisher: string,
-  entityId: string
+  entityId: string,
+  options?: { limit?: number }
 ): Promise<MediaComment[]> => {
   const prefix = getCommentPrefix(entityType);
+  const maxComments = options?.limit ?? 25;
   let offset = 0;
   const comments: MediaComment[] = [];
 
@@ -272,13 +274,17 @@ export const fetchComments = async (
       ...resolved.filter((comment): comment is MediaComment => Boolean(comment))
     );
 
+    if (comments.length >= maxComments) {
+      break;
+    }
+
     if (page.length < FETCH_LIMIT) break;
     offset += page.length;
   }
 
-  return comments.sort(
-    (left, right) => (right.created || 0) - (left.created || 0)
-  );
+  return comments
+    .sort((left, right) => (right.created || 0) - (left.created || 0))
+    .slice(0, maxComments);
 };
 
 export const publishComment = async (params: {

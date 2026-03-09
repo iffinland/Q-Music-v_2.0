@@ -9,6 +9,7 @@ import {
 } from '@mui/material';
 import { FavoriteBorderRounded, FavoriteRounded } from '@mui/icons-material';
 import { useGlobal } from 'qapp-core';
+import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { CommentSection } from '../components/common/CommentSection';
 import { PageHero } from '../components/common/PageHero';
@@ -16,6 +17,8 @@ import { SectionCard } from '../components/common/SectionCard';
 import { useEngagement } from '../hooks/useEngagement';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
+import { useQdnResource } from '../hooks/useQdnResource';
+import { useVisibilityTrigger } from '../hooks/useVisibilityTrigger';
 import { useSongDetail } from '../hooks/useSongDetail';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 import { copyToClipboard } from '../utils/share';
@@ -29,12 +32,28 @@ export const SongDetailPage = () => {
   const decodedIdentifier = identifier
     ? decodeURIComponent(identifier)
     : undefined;
-  const { song, artworkUrl, isLoading, error } = useSongDetail(
+  const { song, isLoading, error } = useSongDetail(
     decodedPublisher,
     decodedIdentifier
   );
+  const {
+    url: artworkUrl,
+    isLoading: artworkLoading,
+    status: artworkStatus,
+  } = useQdnResource({
+    service: 'THUMBNAIL',
+    name: decodedPublisher,
+    identifier: decodedIdentifier,
+    enabled: Boolean(decodedPublisher && decodedIdentifier),
+    timeoutMs: 30_000,
+  });
   const { addRecentSong, isSongFavorite, toggleSong } = useLibrary();
   const { playTrack } = useMiniPlayer();
+  const {
+    targetRef: socialTriggerRef,
+    isVisible: socialVisible,
+    setIsVisible: setSocialVisible,
+  } = useVisibilityTrigger();
   const {
     likeCount,
     hasLike,
@@ -52,12 +71,19 @@ export const SongDetailPage = () => {
     removeComment,
     editComment,
     toggleCommentVisibility,
+    canLoadMoreComments,
+    loadMoreComments,
   } = useEngagement({
     entityType: 'song',
     entityId: song?.identifier,
     entityPublisher: song?.publisher,
     title: song?.title,
+    enabled: socialVisible,
   });
+
+  useEffect(() => {
+    setSocialVisible(false);
+  }, [decodedIdentifier, decodedPublisher, setSocialVisible]);
 
   const handlePlay = () => {
     if (!song) return;
@@ -122,6 +148,19 @@ export const SongDetailPage = () => {
                     boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
                   }}
                 />
+                {artworkLoading ? (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'text.secondary', display: 'block', mt: 1 }}
+                  >
+                    Preparing artwork
+                    {artworkStatus?.percentLoaded
+                      ? ` (${artworkStatus.percentLoaded}%)`
+                      : artworkStatus?.status
+                        ? `: ${artworkStatus.status}`
+                        : '...'}
+                  </Typography>
+                ) : null}
               </Grid>
             ) : null}
             <Grid size={{ xs: 12, md: artworkUrl ? 8 : 12 }}>
@@ -136,8 +175,9 @@ export const SongDetailPage = () => {
                 meta={[
                   'AUDIO',
                   song.artist,
-                  `${likeCount} likes`,
-                  `${comments.length} comments`,
+                  ...(socialVisible
+                    ? [`${likeCount} likes`, `${comments.length} comments`]
+                    : ['Social on demand']),
                 ]}
               />
             </Grid>
@@ -161,8 +201,14 @@ export const SongDetailPage = () => {
             <Button
               variant={hasLike ? 'contained' : 'outlined'}
               size="large"
-              onClick={() => void toggleLike()}
-              disabled={isUpdatingLike}
+              onClick={() => {
+                if (!socialVisible) {
+                  setSocialVisible(true);
+                  return;
+                }
+                void toggleLike();
+              }}
+              disabled={socialVisible && isUpdatingLike}
               startIcon={
                 hasLike ? (
                   <FavoriteRounded fontSize="small" />
@@ -171,32 +217,48 @@ export const SongDetailPage = () => {
                 )
               }
             >
-              {isUpdatingLike
-                ? 'Updating like...'
-                : hasLike
-                  ? 'Unlike'
-                  : 'Like this song'}
+              {!socialVisible
+                ? 'Load social'
+                : isUpdatingLike
+                  ? 'Updating like...'
+                  : hasLike
+                    ? 'Unlike'
+                    : 'Like this song'}
             </Button>
           </Stack>
           <Divider />
-          <CommentSection
-            comments={comments}
-            hiddenCommentIds={hiddenCommentIds}
-            isModerator={isModerator}
-            currentUser={auth?.name || undefined}
-            ownerName={song.publisher}
-            isLoading={engagementLoading}
-            isSubmittingComment={isSubmittingComment}
-            isEditingComment={isEditingComment}
-            isModerating={isModerating}
-            onAddComment={(message) => addComment(message)}
-            onReply={(commentId, message) => addComment(message, commentId)}
-            onEdit={(comment, message) => editComment(comment, message)}
-            onDelete={(comment) => removeComment(comment)}
-            onToggleVisibility={(commentId) =>
-              toggleCommentVisibility(commentId)
-            }
-          />
+          <Stack ref={socialTriggerRef} spacing={1.25}>
+            {!socialVisible ? (
+              <Button
+                variant="outlined"
+                onClick={() => setSocialVisible(true)}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Load comments and likes
+              </Button>
+            ) : (
+              <CommentSection
+                comments={comments}
+                hiddenCommentIds={hiddenCommentIds}
+                isModerator={isModerator}
+                currentUser={auth?.name || undefined}
+                ownerName={song.publisher}
+                isLoading={engagementLoading}
+                isSubmittingComment={isSubmittingComment}
+                isEditingComment={isEditingComment}
+                isModerating={isModerating}
+                onAddComment={(message) => addComment(message)}
+                onReply={(commentId, message) => addComment(message, commentId)}
+                onEdit={(comment, message) => editComment(comment, message)}
+                onDelete={(comment) => removeComment(comment)}
+                onToggleVisibility={(commentId) =>
+                  toggleCommentVisibility(commentId)
+                }
+                canLoadMore={canLoadMoreComments}
+                onLoadMore={loadMoreComments}
+              />
+            )}
+          </Stack>
         </Stack>
       ) : null}
     </Stack>

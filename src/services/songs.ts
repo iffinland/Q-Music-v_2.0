@@ -1,7 +1,9 @@
 import {
   getQdnResourceUrl,
+  isQdnResourceReady,
   searchQdnResources,
   shouldHideQdnResource,
+  waitForQdnResourceReady,
 } from './qdn';
 import type { QdnSearchResource, SongSummary } from '../types/media';
 
@@ -96,8 +98,8 @@ export const fetchSongs = async (options?: {
     service: 'AUDIO',
     query: SONG_PREFIX,
     ...(publisher ? { name: publisher, exactMatchNames: true } : {}),
-    limit: offset + limit,
-    offset: 0,
+    limit,
+    offset,
     reverse: true,
     includeMetadata: true,
     includeStatus: true,
@@ -112,7 +114,6 @@ export const fetchSongs = async (options?: {
         identifier.startsWith(SONG_PREFIX) && !shouldHideQdnResource(resource)
       );
     })
-    .slice(offset, offset + limit)
     .map(mapSongResource)
     .filter((item): item is SongSummary => Boolean(item));
 };
@@ -159,8 +160,40 @@ export const resolveSongArtwork = async (
 
 export const resolveSongStreamUrl = async (
   publisher: string,
-  identifier: string
+  identifier: string,
+  options?: {
+    waitUntilReady?: boolean;
+    onStatusChange?: (status: string, progress?: number) => void;
+  }
 ): Promise<string | null> => {
+  if (options?.waitUntilReady) {
+    const audioStatus = await waitForQdnResourceReady({
+      service: 'AUDIO',
+      name: publisher,
+      identifier,
+      onStatusChange: (status) =>
+        options.onStatusChange?.(status.status, status.percentLoaded),
+    });
+
+    if (isQdnResourceReady(audioStatus.status)) {
+      return getQdnResourceUrl('AUDIO', publisher, identifier);
+    }
+
+    const documentStatus = await waitForQdnResourceReady({
+      service: 'DOCUMENT',
+      name: publisher,
+      identifier,
+      onStatusChange: (status) =>
+        options.onStatusChange?.(status.status, status.percentLoaded),
+    });
+
+    if (isQdnResourceReady(documentStatus.status)) {
+      return getQdnResourceUrl('DOCUMENT', publisher, identifier);
+    }
+
+    return null;
+  }
+
   const audioUrl = await getQdnResourceUrl('AUDIO', publisher, identifier);
   if (audioUrl) return audioUrl;
   return getQdnResourceUrl('DOCUMENT', publisher, identifier);

@@ -17,7 +17,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveSongStreamUrl } from '../../services/songs';
 import {
   currentTimeAtom,
@@ -54,6 +54,10 @@ export const FloatingMiniPlayer = () => {
   const [floatingPosition, setFloatingPosition] = useAtom(
     floatingPlayerPositionAtom
   );
+  const [resourceStatusLabel, setResourceStatusLabel] = useState<string | null>(
+    null
+  );
+  const [resourceProgress, setResourceProgress] = useState<number | null>(null);
   const volume = useAtomValue(volumeAtom);
   const setCurrentTrack = useSetAtom(currentTrackAtom);
   const setQueue = useSetAtom(queueAtom);
@@ -123,11 +127,25 @@ export const FloatingMiniPlayer = () => {
       setStreamUrl(null);
       setCurrentTime(0);
       setDuration(0);
+      setResourceStatusLabel('Preparing audio');
+      setResourceProgress(null);
 
       try {
         const resolvedUrl = await resolveSongStreamUrl(
           currentTrackPublisher,
-          currentTrackIdentifier
+          currentTrackIdentifier,
+          {
+            waitUntilReady: true,
+            onStatusChange: (status, progress) => {
+              if (cancelled) return;
+              setResourceStatusLabel(`QDN ${status}`);
+              setResourceProgress(
+                typeof progress === 'number'
+                  ? Math.max(0, Math.min(100, progress))
+                  : null
+              );
+            },
+          }
         );
 
         if (cancelled) return;
@@ -141,6 +159,8 @@ export const FloatingMiniPlayer = () => {
         audio.src = resolvedUrl;
         audio.load();
         setStreamUrl(resolvedUrl);
+        setResourceStatusLabel('Ready');
+        setResourceProgress(100);
       } catch (playbackError) {
         if (!cancelled) {
           setPlayerError(
@@ -258,6 +278,8 @@ export const FloatingMiniPlayer = () => {
     setStreamUrlValue(null);
     setPlayerError(null);
     setIsFloating(false);
+    setResourceStatusLabel(null);
+    setResourceProgress(null);
   }, [
     setCurrentTimeValue,
     setCurrentTrack,
@@ -437,6 +459,29 @@ export const FloatingMiniPlayer = () => {
           </Typography>
         </Stack>
       </Stack>
+      {resourceStatusLabel && !streamUrl ? (
+        <Stack spacing={0.5} sx={{ mt: 1.25 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            {resourceStatusLabel}
+            {typeof resourceProgress === 'number'
+              ? ` (${resourceProgress}%)`
+              : ''}
+          </Typography>
+          <LinearProgress
+            variant={
+              typeof resourceProgress === 'number'
+                ? 'determinate'
+                : 'indeterminate'
+            }
+            value={typeof resourceProgress === 'number' ? resourceProgress : 0}
+            sx={{
+              height: 6,
+              borderRadius: 999,
+              backgroundColor: 'rgba(255,255,255,0.08)',
+            }}
+          />
+        </Stack>
+      ) : null}
       <LinearProgress
         variant="determinate"
         value={progressValue}

@@ -10,7 +10,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
 import {
@@ -46,6 +46,7 @@ const CropPreview = ({
     offsetX: number;
     offsetY: number;
   } | null>(null);
+  const frameRef = useRef<number | null>(null);
 
   const clampRange = (value: number, min: number, max: number) =>
     Math.min(max, Math.max(min, value));
@@ -75,20 +76,26 @@ const CropPreview = ({
           const dragState = dragStateRef.current;
           if (!dragState || dragState.pointerId !== event.pointerId) return;
 
-          const rect = event.currentTarget.getBoundingClientRect();
-          const nextOffsetX = clamp(
-            dragState.offsetX +
-              (event.clientX - dragState.startX) / (rect.width / 2)
-          );
-          const nextOffsetY = clamp(
-            dragState.offsetY +
-              (event.clientY - dragState.startY) / (rect.height / 2)
-          );
+          if (frameRef.current) {
+            window.cancelAnimationFrame(frameRef.current);
+          }
 
-          onChange({
-            ...crop,
-            offsetX: Number(nextOffsetX.toFixed(3)),
-            offsetY: Number(nextOffsetY.toFixed(3)),
+          frameRef.current = window.requestAnimationFrame(() => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const nextOffsetX = clamp(
+              dragState.offsetX +
+                (event.clientX - dragState.startX) / (rect.width / 2)
+            );
+            const nextOffsetY = clamp(
+              dragState.offsetY +
+                (event.clientY - dragState.startY) / (rect.height / 2)
+            );
+
+            onChange({
+              ...crop,
+              offsetX: Number(nextOffsetX.toFixed(3)),
+              offsetY: Number(nextOffsetY.toFixed(3)),
+            });
           });
         }}
         onPointerUp={(event) => {
@@ -296,13 +303,14 @@ export const PublishPage = () => {
   const [isPublishingPlaylist, setIsPublishingPlaylist] = useState(false);
   const songCoverPreview = useObjectUrl(songCoverFile);
   const playlistCoverPreview = useObjectUrl(playlistCoverFile);
+  const deferredSongPickerQuery = useDeferredValue(songPickerQuery);
 
   const selectedSongs = useMemo(
     () => songs.filter((song) => selectedSongIds.includes(song.id)),
     [selectedSongIds, songs]
   );
   const visibleSongOptions = useMemo(() => {
-    const normalizedQuery = songPickerQuery.trim().toLowerCase();
+    const normalizedQuery = deferredSongPickerQuery.trim().toLowerCase();
     if (!normalizedQuery) {
       return songs;
     }
@@ -313,7 +321,7 @@ export const PublishPage = () => {
         .toLowerCase()
         .includes(normalizedQuery)
     );
-  }, [songPickerQuery, songs]);
+  }, [deferredSongPickerQuery, songs]);
   const songPublishReady =
     Boolean(publisher) &&
     Boolean(audioFile) &&

@@ -41,6 +41,7 @@ export const EditSongPage = () => {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [savePhase, setSavePhase] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -63,14 +64,26 @@ export const EditSongPage = () => {
     setIsSaving(true);
     setSaveError(null);
     setStatus(null);
+    setSavePhase('Preparing update...');
 
     try {
       let fileToPublish = audioFile;
 
       if (!fileToPublish) {
+        setSavePhase('Preparing current QDN audio...');
         const streamUrl = await resolveSongStreamUrl(
           song.publisher,
-          song.identifier
+          song.identifier,
+          {
+            waitUntilReady: true,
+            onStatusChange: (resourceStatus, progress) => {
+              setSavePhase(
+                progress
+                  ? `Preparing current QDN audio (${progress}%)`
+                  : `Preparing current QDN audio: ${resourceStatus}`
+              );
+            },
+          }
         );
 
         if (!streamUrl) {
@@ -96,6 +109,7 @@ export const EditSongPage = () => {
         );
       }
 
+      setSavePhase('Publishing update to QDN...');
       const result = await publishSong({
         title: title.trim() || song.title,
         artist: artist.trim() || song.artist,
@@ -121,6 +135,7 @@ export const EditSongPage = () => {
       );
     } finally {
       setIsSaving(false);
+      setSavePhase(null);
     }
   };
 
@@ -139,6 +154,9 @@ export const EditSongPage = () => {
       {error ? <Alert severity="warning">{error}</Alert> : null}
       {saveError ? <Alert severity="error">{saveError}</Alert> : null}
       {status ? <Alert severity="success">{status}</Alert> : null}
+      {savePhase && !status && !saveError ? (
+        <Alert severity="info">{savePhase}</Alert>
+      ) : null}
       {isLoading ? (
         <Typography variant="body2">Loading song editor...</Typography>
       ) : song ? (

@@ -21,6 +21,22 @@ interface FetchQdnResourceParams {
   identifier: string;
 }
 
+interface QdnResourceStatusParams {
+  name: string;
+  service: string;
+  identifier: string;
+  build?: boolean;
+}
+
+export interface QdnResourceStatus {
+  id?: string;
+  status: string;
+  description?: string;
+  localChunkCount?: number;
+  totalChunkCount?: number;
+  percentLoaded?: number;
+}
+
 const TRACKING_PREFIXES = ['enjoymusic_', 'qmusic_'];
 const LIKE_ARTIFACT_PREFIXES = [
   'song_like_',
@@ -35,6 +51,20 @@ const DELETED_MARKER = 'deleted';
 
 const resultCache = new Map<string, { expiresAt: number; value: unknown }>();
 const inflightCache = new Map<string, Promise<unknown>>();
+const SESSION_CACHE_PREFIX = 'qmusic20.qdn.cache:';
+const QDN_READY_STATUS = 'READY';
+const QDN_BUILDABLE_STATUSES = new Set([
+  'PUBLISHED',
+  'DOWNLOADING',
+  'DOWNLOADED',
+  'BUILDING',
+]);
+const QDN_TERMINAL_ERROR_STATUSES = new Set([
+  'UNSUPPORTED',
+  'BLOCKED',
+  'NOT_PUBLISHED',
+  'MISSING_DATA',
+]);
 
 const normalize = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -52,14 +82,80 @@ const stableKey = (payload: Record<string, unknown>) => {
   return JSON.stringify(ordered);
 };
 
-const getCached = <T>(key: string): T | null => {
-  const entry = resultCache.get(key);
-  if (!entry) return null;
-  if (entry.expiresAt < Date.now()) {
-    resultCache.delete(key);
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const getSessionStorage = () => {
+  if (typeof window === 'undefined') {
     return null;
   }
-  return entry.value as T;
+
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+};
+
+const getPersistedCache = <T>(key: string): T | null => {
+  const storage = getSessionStorage();
+  if (!storage) return null;
+
+  try {
+    const rawValue = storage.getItem(`${SESSION_CACHE_PREFIX}${key}`);
+    if (!rawValue) return null;
+
+    const parsed = JSON.parse(rawValue) as {
+      expiresAt?: number;
+      value?: T;
+    };
+
+    if (typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
+      storage.removeItem(`${SESSION_CACHE_PREFIX}${key}`);
+      return null;
+    }
+
+    return parsed.value ?? null;
+  } catch {
+    return null;
+  }
+};
+
+const setPersistedCache = (key: string, value: unknown, ttlMs: number) => {
+  const storage = getSessionStorage();
+  if (!storage) return;
+
+  try {
+    storage.setItem(
+      `${SESSION_CACHE_PREFIX}${key}`,
+      JSON.stringify({
+        expiresAt: Date.now() + ttlMs,
+        value,
+      })
+    );
+  } catch {
+    // Ignore storage quota and private-mode failures.
+  }
+};
+
+const getCached = <T>(key: string): T | null => {
+  const entry = resultCache.get(key);
+  if (entry) {
+    if (entry.expiresAt < Date.now()) {
+      resultCache.delete(key);
+    } else {
+      return entry.value as T;
+    }
+  }
+
+  const persistedValue = getPersistedCache<T>(key);
+  if (persistedValue !== null) {
+    return persistedValue;
+  }
+
+  return null;
 };
 
 const setCached = (key: string, value: unknown, ttlMs: number) => {
@@ -67,6 +163,69 @@ const setCached = (key: string, value: unknown, ttlMs: number) => {
     expiresAt: Date.now() + ttlMs,
     value,
   });
+  setPersistedCache(key, value, ttlMs);
+};
+
+const normalizeStatusField = (value: unknown) =>
+  typeof value === 'string' ? value.trim().toUpperCase() : '';
+
+const toFiniteNumber = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return undefined;
+};
+
+const normalizeQdnStatus = (value: unknown): QdnResourceStatus => {
+  if (typeof value === 'string') {
+    return {
+      status: normalizeStatusField(value) || 'UNKNOWN',
+      description: value,
+    };
+  }
+
+  if (!value || typeof value !== 'object') {
+    return { status: 'UNKNOWN' };
+  }
+
+  const payload = value as Record<string, unknown>;
+  const localChunkCount =
+    toFiniteNumber(payload.localChunkCount) ??
+    toFiniteNumber(payload.localChunk_count) ??
+    toFiniteNumber(payload.localChunk);
+  const totalChunkCount =
+    toFiniteNumber(payload.totalChunkCount) ??
+    toFiniteNumber(payload.totalChunk_count) ??
+    toFiniteNumber(payload.totalChunk);
+  const percentLoaded =
+    toFiniteNumber(payload.percentLoaded) ??
+    toFiniteNumber(payload.percent_loaded) ??
+    (localChunkCount !== undefined &&
+    totalChunkCount !== undefined &&
+    totalChunkCount > 0
+      ? Math.round((localChunkCount / totalChunkCount) * 100)
+      : undefined);
+
+  return {
+    id: typeof payload.id === 'string' ? payload.id : undefined,
+    status:
+      normalizeStatusField(payload.status) ||
+      normalizeStatusField(payload.localStatus) ||
+      'UNKNOWN',
+    description:
+      typeof payload.description === 'string' ? payload.description : undefined,
+    localChunkCount,
+    totalChunkCount,
+    percentLoaded,
+  };
 };
 
 const runCached = async <T>(
@@ -190,6 +349,79 @@ export const fetchQdnResource = async <T>(
   }
 
   return result as T;
+};
+
+export const getQdnResourceStatus = async (
+  params: QdnResourceStatusParams
+): Promise<QdnResourceStatus> => {
+  const result = await qortalRequest({
+    action: 'GET_QDN_RESOURCE_STATUS',
+    name: params.name,
+    service: params.service,
+    identifier: params.identifier,
+    ...(params.build ? { build: true } : {}),
+  } as never);
+
+  return normalizeQdnStatus(result);
+};
+
+export const isQdnResourceReady = (status?: string) =>
+  normalizeStatusField(status) === QDN_READY_STATUS;
+
+export const shouldTriggerQdnBuild = (status?: string) =>
+  QDN_BUILDABLE_STATUSES.has(normalizeStatusField(status));
+
+export const waitForQdnResourceReady = async (
+  params: QdnResourceStatusParams & {
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+    onStatusChange?: (status: QdnResourceStatus) => void;
+  }
+): Promise<QdnResourceStatus> => {
+  const timeoutMs = params.timeoutMs ?? 45_000;
+  const pollIntervalMs = params.pollIntervalMs ?? 1_500;
+  const startedAt = Date.now();
+  let buildTriggered = false;
+  let latestStatus: QdnResourceStatus = { status: 'UNKNOWN' };
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    latestStatus = await getQdnResourceStatus({
+      name: params.name,
+      service: params.service,
+      identifier: params.identifier,
+      ...(buildTriggered ? { build: false } : {}),
+    });
+    params.onStatusChange?.(latestStatus);
+
+    if (isQdnResourceReady(latestStatus.status)) {
+      return latestStatus;
+    }
+
+    if (!buildTriggered && shouldTriggerQdnBuild(latestStatus.status)) {
+      buildTriggered = true;
+      latestStatus = await getQdnResourceStatus({
+        name: params.name,
+        service: params.service,
+        identifier: params.identifier,
+        build: true,
+      });
+      params.onStatusChange?.(latestStatus);
+
+      if (isQdnResourceReady(latestStatus.status)) {
+        return latestStatus;
+      }
+    }
+
+    if (
+      QDN_TERMINAL_ERROR_STATUSES.has(normalizeStatusField(latestStatus.status))
+    ) {
+      return latestStatus;
+    }
+
+    await sleep(pollIntervalMs);
+  }
+
+  return latestStatus;
 };
 
 export const getQdnResourceUrl = async (

@@ -14,6 +14,8 @@ import { formatSongCardMetadata } from '../utils/songMetadata';
 export const MyMusicPage = () => {
   const { auth } = useGlobal();
   const publisher = auth?.name?.trim() || '';
+  const [songLimit, setSongLimit] = useState(24);
+  const [playlistLimit, setPlaylistLimit] = useState(24);
   const [songs, setSongs] = useState<SongSummary[]>([]);
   const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,8 +37,8 @@ export const MyMusicPage = () => {
 
       try {
         const [loadedSongs, loadedPlaylists] = await Promise.all([
-          fetchSongsByPublisher(publisher, { limit: 100 }),
-          fetchPlaylistsByPublisher(publisher, { limit: 100 }),
+          fetchSongsByPublisher(publisher, { limit: songLimit }),
+          fetchPlaylistsByPublisher(publisher, { limit: playlistLimit }),
         ]);
 
         if (cancelled) return;
@@ -62,7 +64,7 @@ export const MyMusicPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [publisher]);
+  }, [playlistLimit, publisher, songLimit]);
 
   return (
     <Stack spacing={3}>
@@ -138,6 +140,14 @@ export const MyMusicPage = () => {
                 No published songs were found for your current Qortal name.
               </Typography>
             )}
+            {songs.length >= songLimit ? (
+              <Button
+                variant="outlined"
+                onClick={() => setSongLimit((current) => current + 24)}
+              >
+                Load more songs
+              </Button>
+            ) : null}
           </Stack>
 
           <Stack spacing={2}>
@@ -196,6 +206,14 @@ export const MyMusicPage = () => {
                 No published playlists were found for your current Qortal name.
               </Typography>
             )}
+            {playlists.length >= playlistLimit ? (
+              <Button
+                variant="outlined"
+                onClick={() => setPlaylistLimit((current) => current + 24)}
+              >
+                Load more playlists
+              </Button>
+            ) : null}
           </Stack>
         </>
       ) : null}

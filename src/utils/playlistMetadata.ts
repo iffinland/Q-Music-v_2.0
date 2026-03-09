@@ -6,7 +6,7 @@ export const formatPlaylistCardMetadata = (params: {
 }) => {
   const lines = [`PUBLISHED @ ${params.publisher}`, `TITLE: ${params.title}`];
 
-  if (typeof params.songCount === 'number') {
+  if (typeof params.songCount === 'number' && params.songCount > 0) {
     lines.push(`TRACKS: ${params.songCount}`);
   }
 

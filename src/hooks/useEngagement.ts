@@ -19,6 +19,7 @@ export const useEngagement = (params: {
   entityId?: string;
   entityPublisher?: string;
   title?: string;
+  enabled?: boolean;
 }) => {
   const { auth } = useGlobal();
   const [likeCount, setLikeCount] = useState(0);
@@ -31,12 +32,18 @@ export const useEngagement = (params: {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [isModerating, setIsModerating] = useState(false);
+  const [commentLimit, setCommentLimit] = useState(25);
   const isModerator =
     Boolean(auth?.name) &&
     Boolean(params.entityPublisher) &&
     auth?.name?.toLowerCase() === params.entityPublisher?.toLowerCase();
 
   const refresh = useCallback(async () => {
+    if (!params.enabled) {
+      setIsLoading(false);
+      return;
+    }
+
     if (!params.entityId || !params.entityPublisher) {
       setIsLoading(false);
       return;
@@ -51,7 +58,8 @@ export const useEngagement = (params: {
           fetchComments(
             params.entityType,
             params.entityPublisher,
-            params.entityId
+            params.entityId,
+            { limit: commentLimit }
           ),
           auth?.name
             ? hasUserLiked(params.entityType, auth.name, params.entityId)
@@ -73,11 +81,29 @@ export const useEngagement = (params: {
     } finally {
       setIsLoading(false);
     }
-  }, [auth?.name, params.entityId, params.entityPublisher, params.entityType]);
+  }, [
+    auth?.name,
+    commentLimit,
+    params.enabled,
+    params.entityId,
+    params.entityPublisher,
+    params.entityType,
+  ]);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!params.enabled) {
+      setIsLoading(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void refresh();
+    }, 200);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [params.enabled, refresh]);
 
   const toggleLike = useCallback(async () => {
     if (
@@ -325,5 +351,8 @@ export const useEngagement = (params: {
     editComment,
     toggleCommentVisibility,
     refresh,
+    commentLimit,
+    canLoadMoreComments: comments.length >= commentLimit,
+    loadMoreComments: () => setCommentLimit((current) => current + 25),
   };
 };

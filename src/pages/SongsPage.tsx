@@ -8,9 +8,11 @@ import {
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import { ArtworkThumb } from '../components/common/ArtworkThumb';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
@@ -21,18 +23,22 @@ import type { SongSummary } from '../types/media';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 
 export const SongsPage = () => {
-  const [limit, setLimit] = useState(24);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const pageSize = isMobile ? 12 : 24;
+  const [limit, setLimit] = useState(pageSize);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'latest' | 'title' | 'artist'>('latest');
   const [artistLetter, setArtistLetter] = useState<string>('ALL');
   const { songs, isLoading, error } = useSongsFeed(limit);
   const { addRecentSong } = useLibrary();
   const { playQueue } = useMiniPlayer();
+  const deferredQuery = useDeferredValue(query);
 
   const alphabet = useMemo(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), []);
 
   const visibleSongs = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = deferredQuery.trim().toLowerCase();
     const filtered = songs.filter((song) => {
       const normalizedArtist = song.artist.trim().toUpperCase();
       const matchesLetter =
@@ -61,7 +67,7 @@ export const SongsPage = () => {
         (left.updated || left.created || 0)
       );
     });
-  }, [artistLetter, query, songs, sortBy]);
+  }, [artistLetter, deferredQuery, songs, sortBy]);
 
   const handlePreview = (trackId: string) => {
     const queue = songs.map((track) => ({
@@ -221,7 +227,7 @@ export const SongsPage = () => {
         </Typography>
         <Button
           variant="contained"
-          onClick={() => setLimit((current) => current + 24)}
+          onClick={() => setLimit((current) => current + pageSize)}
         >
           Load more
         </Button>

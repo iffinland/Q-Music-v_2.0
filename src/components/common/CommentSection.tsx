@@ -26,6 +26,7 @@ interface CommentSectionProps {
   isSubmittingComment?: boolean;
   isEditingComment?: boolean;
   isModerating?: boolean;
+  canLoadMore?: boolean;
   onAddComment: (message: string) => Promise<boolean> | boolean;
   onReply: (commentId: string, message: string) => Promise<boolean> | boolean;
   onEdit: (
@@ -34,6 +35,7 @@ interface CommentSectionProps {
   ) => Promise<boolean> | boolean;
   onDelete: (comment: MediaComment) => Promise<boolean> | boolean;
   onToggleVisibility: (commentId: string) => Promise<boolean> | boolean;
+  onLoadMore?: () => void;
 }
 
 export const CommentSection = ({
@@ -47,11 +49,13 @@ export const CommentSection = ({
   isSubmittingComment,
   isEditingComment,
   isModerating,
+  canLoadMore,
   onAddComment,
   onReply,
   onEdit,
   onDelete,
   onToggleVisibility,
+  onLoadMore,
 }: CommentSectionProps) => {
   const [commentDraft, setCommentDraft] = useState('');
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
@@ -402,6 +406,11 @@ export const CommentSection = ({
             No comments yet.
           </Typography>
         )}
+        {canLoadMore && onLoadMore ? (
+          <Button variant="outlined" size="small" onClick={onLoadMore}>
+            Load more comments
+          </Button>
+        ) : null}
       </Stack>
     </Stack>
   );

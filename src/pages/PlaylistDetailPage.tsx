@@ -25,6 +25,8 @@ import { useEngagement } from '../hooks/useEngagement';
 import { useMediaPublish } from '../hooks/useMediaPublish';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { usePlaylistDetail } from '../hooks/usePlaylistDetail';
+import { useQdnResource } from '../hooks/useQdnResource';
+import { useVisibilityTrigger } from '../hooks/useVisibilityTrigger';
 import { useLibrary } from '../hooks/useLibrary';
 import type { PlaylistSongReference } from '../types/media';
 import { emitMediaRefresh } from '../utils/mediaEvents';
@@ -40,10 +42,26 @@ export const PlaylistDetailPage = () => {
   const { auth } = useGlobal();
   const { publishPlaylist } = useMediaPublish();
   const { addRecentSong, isPlaylistFavorite, togglePlaylist } = useLibrary();
-  const { playlist, artworkUrl, isLoading, error } = usePlaylistDetail(
+  const {
+    targetRef: socialTriggerRef,
+    isVisible: socialVisible,
+    setIsVisible: setSocialVisible,
+  } = useVisibilityTrigger();
+  const { playlist, isLoading, error } = usePlaylistDetail(
     decodedPublisher,
     decodedIdentifier
   );
+  const {
+    url: artworkUrl,
+    isLoading: artworkLoading,
+    status: artworkStatus,
+  } = useQdnResource({
+    service: 'THUMBNAIL',
+    name: decodedPublisher,
+    identifier: decodedIdentifier,
+    enabled: Boolean(decodedPublisher && decodedIdentifier),
+    timeoutMs: 30_000,
+  });
   const { playQueue, playTrack } = useMiniPlayer();
   const [orderedSongs, setOrderedSongs] = useState<PlaylistSongReference[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -66,16 +84,23 @@ export const PlaylistDetailPage = () => {
     removeComment,
     editComment,
     toggleCommentVisibility,
+    canLoadMoreComments,
+    loadMoreComments,
   } = useEngagement({
     entityType: 'playlist',
     entityId: playlist?.identifier,
     entityPublisher: playlist?.publisher,
     title: playlist?.title,
+    enabled: socialVisible,
   });
 
   useEffect(() => {
     setOrderedSongs(playlist?.songs || []);
   }, [playlist]);
+
+  useEffect(() => {
+    setSocialVisible(false);
+  }, [decodedIdentifier, decodedPublisher, setSocialVisible]);
 
   const isOwner = useMemo(() => {
     if (!auth?.name || !playlist?.publisher) return false;
@@ -221,6 +246,19 @@ export const PlaylistDetailPage = () => {
                     boxShadow: '0 20px 40px rgba(0,0,0,0.18)',
                   }}
                 />
+                {artworkLoading ? (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'text.secondary', display: 'block', mt: 1 }}
+                  >
+                    Preparing artwork
+                    {artworkStatus?.percentLoaded
+                      ? ` (${artworkStatus.percentLoaded}%)`
+                      : artworkStatus?.status
+                        ? `: ${artworkStatus.status}`
+                        : '...'}
+                  </Typography>
+                ) : null}
               </Grid>
             ) : null}
             <Grid size={{ xs: 12, md: artworkUrl ? 8 : 12 }}>
@@ -236,8 +274,9 @@ export const PlaylistDetailPage = () => {
                 meta={[
                   'PLAYLIST',
                   `${playlist.songCount} tracks`,
-                  `${likeCount} likes`,
-                  `${comments.length} comments`,
+                  ...(socialVisible
+                    ? [`${likeCount} likes`, `${comments.length} comments`]
+                    : ['Social on demand']),
                   ...(isOwner ? ['Owner edit mode'] : []),
                 ]}
               />
@@ -267,8 +306,14 @@ export const PlaylistDetailPage = () => {
             <Button
               variant={hasLike ? 'contained' : 'outlined'}
               size="large"
-              onClick={() => void toggleLike()}
-              disabled={isUpdatingLike}
+              onClick={() => {
+                if (!socialVisible) {
+                  setSocialVisible(true);
+                  return;
+                }
+                void toggleLike();
+              }}
+              disabled={socialVisible && isUpdatingLike}
               startIcon={
                 hasLike ? (
                   <FavoriteRounded fontSize="small" />
@@ -277,11 +322,13 @@ export const PlaylistDetailPage = () => {
                 )
               }
             >
-              {isUpdatingLike
-                ? 'Updating like...'
-                : hasLike
-                  ? 'Unlike'
-                  : 'Like playlist'}
+              {!socialVisible
+                ? 'Load social'
+                : isUpdatingLike
+                  ? 'Updating like...'
+                  : hasLike
+                    ? 'Unlike'
+                    : 'Like playlist'}
             </Button>
             {isOwner ? (
               <Button
@@ -354,24 +401,38 @@ export const PlaylistDetailPage = () => {
             ))}
           </Stack>
           <Divider />
-          <CommentSection
-            comments={comments}
-            hiddenCommentIds={hiddenCommentIds}
-            isModerator={isModerator}
-            currentUser={auth?.name || undefined}
-            ownerName={playlist.publisher}
-            isLoading={engagementLoading}
-            isSubmittingComment={isSubmittingComment}
-            isEditingComment={isEditingComment}
-            isModerating={isModerating}
-            onAddComment={(message) => addComment(message)}
-            onReply={(commentId, message) => addComment(message, commentId)}
-            onEdit={(comment, message) => editComment(comment, message)}
-            onDelete={(comment) => removeComment(comment)}
-            onToggleVisibility={(commentId) =>
-              toggleCommentVisibility(commentId)
-            }
-          />
+          <Stack ref={socialTriggerRef} spacing={1.25}>
+            {!socialVisible ? (
+              <Button
+                variant="outlined"
+                onClick={() => setSocialVisible(true)}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                Load comments and likes
+              </Button>
+            ) : (
+              <CommentSection
+                comments={comments}
+                hiddenCommentIds={hiddenCommentIds}
+                isModerator={isModerator}
+                currentUser={auth?.name || undefined}
+                ownerName={playlist.publisher}
+                isLoading={engagementLoading}
+                isSubmittingComment={isSubmittingComment}
+                isEditingComment={isEditingComment}
+                isModerating={isModerating}
+                onAddComment={(message) => addComment(message)}
+                onReply={(commentId, message) => addComment(message, commentId)}
+                onEdit={(comment, message) => editComment(comment, message)}
+                onDelete={(comment) => removeComment(comment)}
+                onToggleVisibility={(commentId) =>
+                  toggleCommentVisibility(commentId)
+                }
+                canLoadMore={canLoadMoreComments}
+                onLoadMore={loadMoreComments}
+              />
+            )}
+          </Stack>
         </Stack>
       ) : null}
     </Stack>

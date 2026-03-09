@@ -3,6 +3,7 @@ import {
   getQdnResourceUrl,
   searchQdnResources,
   shouldHideQdnResource,
+  waitForQdnResourceReady,
 } from './qdn';
 import { fetchSongByIdentifier } from './songs';
 import type {
@@ -139,8 +140,8 @@ export const fetchPlaylists = async (options?: {
     service: 'PLAYLIST',
     query: PLAYLIST_PREFIX,
     ...(publisher ? { name: publisher, exactMatchNames: true } : {}),
-    limit: offset + limit,
-    offset: 0,
+    limit,
+    offset,
     reverse: true,
     includeMetadata: true,
     includeStatus: true,
@@ -155,29 +156,10 @@ export const fetchPlaylists = async (options?: {
         !shouldHideQdnResource(resource)
       );
     })
-    .slice(offset, offset + limit)
     .map(mapPlaylistSummary)
     .filter((item): item is PlaylistSummary => Boolean(item));
 
-  const details = await Promise.all(
-    summaries.map(async (summary) => {
-      try {
-        const detail = await fetchPlaylistDetail(
-          summary.publisher,
-          summary.identifier
-        );
-        if (!detail) return summary;
-        return {
-          ...summary,
-          songCount: detail.songs.length,
-        };
-      } catch {
-        return summary;
-      }
-    })
-  );
-
-  return details;
+  return summaries;
 };
 
 export const fetchPlaylistsByPublisher = async (
@@ -212,6 +194,13 @@ export const fetchPlaylistDetail = async (
   const resource = resources.find((entry) => !shouldHideQdnResource(entry));
   const summary = resource ? mapPlaylistSummary(resource) : null;
   if (!summary) return null;
+
+  await waitForQdnResourceReady({
+    name: publisher,
+    service: 'PLAYLIST',
+    identifier,
+    timeoutMs: 30_000,
+  });
 
   let payload: RawPlaylistPayload | null = null;
   try {

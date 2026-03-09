@@ -7,9 +7,11 @@ import {
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
 import { ArtworkThumb } from '../components/common/ArtworkThumb';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
@@ -17,13 +19,17 @@ import { usePlaylistsFeed } from '../hooks/usePlaylistsFeed';
 import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
 
 export const PlaylistsPage = () => {
-  const [limit, setLimit] = useState(24);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const pageSize = isMobile ? 12 : 24;
+  const [limit, setLimit] = useState(pageSize);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'latest' | 'title' | 'tracks'>('latest');
   const { playlists, isLoading, error } = usePlaylistsFeed(limit);
+  const deferredQuery = useDeferredValue(query);
 
   const visiblePlaylists = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const normalizedQuery = deferredQuery.trim().toLowerCase();
     const filtered = playlists.filter((playlist) => {
       if (!normalizedQuery) return true;
       return [playlist.title, playlist.publisher, playlist.description || '']
@@ -44,7 +50,7 @@ export const PlaylistsPage = () => {
         (left.updated || left.created || 0)
       );
     });
-  }, [playlists, query, sortBy]);
+  }, [deferredQuery, playlists, sortBy]);
 
   return (
     <Stack spacing={3}>
@@ -140,7 +146,7 @@ export const PlaylistsPage = () => {
         </Typography>
         <Button
           variant="contained"
-          onClick={() => setLimit((current) => current + 24)}
+          onClick={() => setLimit((current) => current + pageSize)}
         >
           Load more
         </Button>

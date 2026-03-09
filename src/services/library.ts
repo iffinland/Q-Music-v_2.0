@@ -1,4 +1,8 @@
-import { fetchQdnResource, searchQdnResources } from './qdn';
+import {
+  fetchQdnResource,
+  searchQdnResources,
+  waitForQdnResourceReady,
+} from './qdn';
 import type { PlaylistSummary, SongSummary } from '../types/media';
 
 const LIBRARY_IDENTIFIER = 'enjoymusic_library_state';
@@ -107,6 +111,13 @@ export const loadRemoteLibrary = async (
   if (!resources.length) {
     return null;
   }
+
+  await waitForQdnResourceReady({
+    name: publisher,
+    service: LIBRARY_SERVICE,
+    identifier: LIBRARY_IDENTIFIER,
+    timeoutMs: 20_000,
+  });
 
   const payload = await fetchQdnResource<Partial<RemoteLibraryState>>(
     getLibraryMetadata(publisher)

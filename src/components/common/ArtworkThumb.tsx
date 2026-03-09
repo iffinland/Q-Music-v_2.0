@@ -1,7 +1,6 @@
 import { Box, Skeleton, Typography } from '@mui/material';
-import { useEffect, useState } from 'react';
-import { resolvePlaylistArtwork } from '../../services/playlists';
-import { resolveSongArtwork } from '../../services/songs';
+import { useEffect, useRef, useState } from 'react';
+import { useQdnResource } from '../../hooks/useQdnResource';
 
 interface ArtworkThumbProps {
   kind: 'song' | 'playlist';
@@ -20,47 +19,55 @@ export const ArtworkThumb = ({
   size = 72,
   radius = 2.5,
 }: ArtworkThumbProps) => {
-  const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const resourceService = kind === 'playlist' ? 'THUMBNAIL' : 'THUMBNAIL';
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const { url: artworkUrl, isLoading } = useQdnResource({
+    service: resourceService,
+    name: publisher,
+    identifier,
+    enabled: isVisible,
+    timeoutMs: 30_000,
+  });
 
   useEffect(() => {
-    let cancelled = false;
+    const node = hostRef.current;
+    if (!node) return;
 
-    const load = async () => {
-      setIsLoading(true);
-      try {
-        const result =
-          kind === 'song'
-            ? await resolveSongArtwork(publisher, identifier)
-            : await resolvePlaylistArtwork(publisher, identifier);
-
-        if (!cancelled) {
-          setArtworkUrl(result);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsVisible(true);
+          observer.disconnect();
         }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
+      },
+      {
+        rootMargin: '180px',
       }
-    };
+    );
 
-    void load();
-
+    observer.observe(node);
     return () => {
-      cancelled = true;
+      observer.disconnect();
     };
-  }, [identifier, kind, publisher]);
+  }, []);
 
-  if (isLoading) {
-    return <Skeleton variant="rounded" width={size} height={size} />;
+  if (!isVisible || isLoading) {
+    return (
+      <Box ref={hostRef}>
+        <Skeleton variant="rounded" width={size} height={size} />
+      </Box>
+    );
   }
 
   if (artworkUrl) {
     return (
       <Box
+        ref={hostRef}
         component="img"
         src={artworkUrl}
         alt={title}
+        loading="lazy"
         sx={{
           width: size,
           height: size,
@@ -76,6 +83,7 @@ export const ArtworkThumb = ({
 
   return (
     <Box
+      ref={hostRef}
       sx={{
         width: size,
         height: size,
