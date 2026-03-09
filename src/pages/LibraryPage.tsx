@@ -154,7 +154,7 @@ export const LibraryPage = () => {
               sx={{
                 border: '1px solid',
                 borderColor: 'divider',
-                borderRadius: 3,
+                borderRadius: 2,
                 p: 2,
                 backgroundColor: 'var(--qm-surface-soft)',
               }}

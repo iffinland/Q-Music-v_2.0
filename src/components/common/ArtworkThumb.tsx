@@ -17,7 +17,7 @@ export const ArtworkThumb = ({
   identifier,
   title,
   size = 72,
-  radius = 2.5,
+  radius = 2,
 }: ArtworkThumbProps) => {
   const resourceService = kind === 'playlist' ? 'THUMBNAIL' : 'THUMBNAIL';
   const hostRef = useRef<HTMLDivElement | null>(null);

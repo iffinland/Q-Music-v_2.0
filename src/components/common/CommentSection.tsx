@@ -149,7 +149,7 @@ export const CommentSection = ({
         sx={{
           border: '1px solid',
           borderColor: 'divider',
-          borderRadius: 3,
+          borderRadius: 2,
           px: { xs: 1.5, sm: 2 },
           py: 1.5,
           backgroundColor: 'var(--qm-surface-soft)',
@@ -193,7 +193,7 @@ export const CommentSection = ({
               sx={{
                 border: '1px solid',
                 borderColor: 'divider',
-                borderRadius: 3,
+                borderRadius: 2,
                 px: { xs: 1.5, sm: 2 },
                 py: 1.35,
                 backgroundColor: 'var(--qm-surface-soft)',

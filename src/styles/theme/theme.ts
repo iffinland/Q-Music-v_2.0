@@ -113,7 +113,7 @@ const lightTheme = createTheme({
     divider: 'rgba(37, 99, 235, 0.18)',
   },
   shape: {
-    borderRadius: 18,
+    borderRadius: 16,
   },
   components: {
     ...commonThemeOptions.components,
@@ -130,7 +130,7 @@ const lightTheme = createTheme({
       },
       styleOverrides: {
         root: {
-          borderRadius: 14,
+          borderRadius: 16,
           textTransform: 'none',
           fontWeight: 700,
           transition:
@@ -147,7 +147,7 @@ const lightTheme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 24,
+          borderRadius: 16,
           boxShadow: `0 18px 40px ${alpha('#7ba6de', 0.18)}`,
         },
       },
@@ -210,7 +210,7 @@ const darkTheme = createTheme({
     divider: 'rgba(96, 165, 250, 0.18)',
   },
   shape: {
-    borderRadius: 18,
+    borderRadius: 16,
   },
   components: {
     ...commonThemeOptions.components,
@@ -227,7 +227,7 @@ const darkTheme = createTheme({
       },
       styleOverrides: {
         root: {
-          borderRadius: 14,
+          borderRadius: 16,
           textTransform: 'none',
           fontWeight: 700,
           transition:
@@ -244,7 +244,7 @@ const darkTheme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 24,
+          borderRadius: 16,
           boxShadow: `0 18px 40px ${alpha('#020617', 0.45)}`,
         },
       },

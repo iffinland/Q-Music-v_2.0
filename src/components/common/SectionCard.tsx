@@ -24,7 +24,7 @@ export const SectionCard = ({
         height: '100%',
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 3.5,
+        borderRadius: 2,
         p: 2.75,
         background: 'var(--qm-panel-bg)',
         boxShadow: 'var(--qm-shadow-soft)',

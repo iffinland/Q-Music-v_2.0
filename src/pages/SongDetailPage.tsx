@@ -142,7 +142,7 @@ export const SongDetailPage = () => {
                   sx={{
                     width: '100%',
                     maxWidth: 320,
-                    borderRadius: 4,
+                    borderRadius: 2,
                     border: '1px solid',
                     borderColor: 'divider',
                     boxShadow: 'var(--qm-shadow-soft)',

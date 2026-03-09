@@ -327,7 +327,7 @@ export const FloatingMiniPlayer = () => {
         zIndex: 1400,
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 3,
+        borderRadius: 2,
         px: 2,
         py: 1.5,
         backdropFilter: 'blur(22px)',

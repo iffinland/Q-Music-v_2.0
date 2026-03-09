@@ -105,7 +105,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
       <Box sx={{ p: 2.5 }}>
         <Box
           sx={{
-            borderRadius: 3,
+            borderRadius: 2,
             border: '1px solid',
             borderColor: 'divider',
             p: 2,
@@ -116,14 +116,14 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             <Button
               variant="contained"
               fullWidth
-              sx={{ justifyContent: 'flex-start', borderRadius: 2.25 }}
+              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
             >
               Join Our Chat
             </Button>
             <Button
               variant="outlined"
               fullWidth
-              sx={{ justifyContent: 'flex-start', borderRadius: 2.25 }}
+              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
             >
               App version 2.0
             </Button>
@@ -131,7 +131,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
               variant="outlined"
               fullWidth
               disabled
-              sx={{ justifyContent: 'flex-start', borderRadius: 2.25 }}
+              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
             >
               Podcast
             </Button>
@@ -139,7 +139,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
               variant="outlined"
               fullWidth
               disabled
-              sx={{ justifyContent: 'flex-start', borderRadius: 2.25 }}
+              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
             >
               Audiobooks
             </Button>
@@ -212,6 +212,11 @@ export const AppShell = ({ children }: AppShellProps) => {
                 variant="outlined"
               />
             ) : null}
+            <Chip
+              label={auth?.name ? `@${auth.name}` : 'Guest mode'}
+              color="primary"
+              variant="outlined"
+            />
             <IconButton
               color="inherit"
               onClick={() =>
@@ -228,11 +233,6 @@ export const AppShell = ({ children }: AppShellProps) => {
             >
               {isLightTheme ? <DarkModeRounded /> : <LightModeRounded />}
             </IconButton>
-            <Chip
-              label={auth?.name ? `@${auth.name}` : 'Guest mode'}
-              color="primary"
-              variant="outlined"
-            />
           </Stack>
         </Toolbar>
       </AppBar>

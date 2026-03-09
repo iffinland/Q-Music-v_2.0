@@ -499,7 +499,7 @@ export const PublishPage = () => {
             sx={{
               border: '1px solid',
               borderColor: 'divider',
-              borderRadius: 3,
+              borderRadius: 2,
               p: 3,
               background: 'var(--qm-panel-bg)',
             }}
@@ -633,7 +633,7 @@ export const PublishPage = () => {
             sx={{
               border: '1px solid',
               borderColor: 'divider',
-              borderRadius: 3,
+              borderRadius: 2,
               p: 3,
               background: 'var(--qm-panel-bg)',
             }}
@@ -733,7 +733,7 @@ export const PublishPage = () => {
                   sx={{
                     border: '1px solid',
                     borderColor: 'divider',
-                    borderRadius: 2.5,
+                    borderRadius: 2,
                     px: 1.5,
                     py: 1.25,
                     backgroundColor: 'var(--qm-surface-soft)',

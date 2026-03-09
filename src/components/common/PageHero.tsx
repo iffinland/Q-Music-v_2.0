@@ -19,7 +19,7 @@ export const PageHero = ({
       sx={{
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 4,
+        borderRadius: 2,
         px: { xs: 2.5, md: 4 },
         py: { xs: 3, md: 3.75 },
         background: 'var(--qm-hero-bg)',

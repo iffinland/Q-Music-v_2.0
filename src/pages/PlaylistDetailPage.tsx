@@ -240,7 +240,7 @@ export const PlaylistDetailPage = () => {
                   sx={{
                     width: '100%',
                     maxWidth: 360,
-                    borderRadius: 4,
+                    borderRadius: 2,
                     border: '1px solid',
                     borderColor: 'divider',
                     boxShadow: 'var(--qm-shadow-soft)',
@@ -356,7 +356,7 @@ export const PlaylistDetailPage = () => {
                 sx={{
                   border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 3,
+                  borderRadius: 2,
                   px: { xs: 1.5, sm: 2 },
                   py: 1.25,
                   backgroundColor: 'var(--qm-surface-soft)',
