@@ -21,6 +21,7 @@ export const useEngagement = (params: {
   title?: string;
   enabled?: boolean;
 }) => {
+  const COMMENT_PAGE_SIZE = 5;
   const { auth } = useGlobal();
   const [likeCount, setLikeCount] = useState(0);
   const [hasLike, setHasLike] = useState(false);
@@ -32,7 +33,7 @@ export const useEngagement = (params: {
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [isModerating, setIsModerating] = useState(false);
-  const [commentLimit, setCommentLimit] = useState(25);
+  const [commentLimit, setCommentLimit] = useState(COMMENT_PAGE_SIZE);
   const isModerator =
     Boolean(auth?.name) &&
     Boolean(params.entityPublisher) &&
@@ -353,6 +354,7 @@ export const useEngagement = (params: {
     refresh,
     commentLimit,
     canLoadMoreComments: comments.length >= commentLimit,
-    loadMoreComments: () => setCommentLimit((current) => current + 25),
+    loadMoreComments: () =>
+      setCommentLimit((current) => current + COMMENT_PAGE_SIZE),
   };
 };

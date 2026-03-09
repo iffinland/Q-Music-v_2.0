@@ -408,7 +408,7 @@ export const CommentSection = ({
         )}
         {canLoadMore && onLoadMore ? (
           <Button variant="outlined" size="small" onClick={onLoadMore}>
-            Load more comments
+            Load 5 more comments
           </Button>
         ) : null}
       </Stack>

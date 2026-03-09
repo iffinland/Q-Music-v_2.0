@@ -10,9 +10,9 @@ import {
 } from '@mui/material';
 import {
   ArrowDownwardRounded,
+  ArrowUpwardRounded,
   FavoriteBorderRounded,
   FavoriteRounded,
-  ArrowUpwardRounded,
   PlayArrowRounded,
 } from '@mui/icons-material';
 import { useGlobal } from 'qapp-core';
@@ -27,7 +27,6 @@ import { useMediaPublish } from '../hooks/useMediaPublish';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { usePlaylistDetail } from '../hooks/usePlaylistDetail';
 import { useQdnResource } from '../hooks/useQdnResource';
-import { useVisibilityTrigger } from '../hooks/useVisibilityTrigger';
 import { useLibrary } from '../hooks/useLibrary';
 import type { PlaylistSongReference } from '../types/media';
 import { emitMediaRefresh } from '../utils/mediaEvents';
@@ -43,11 +42,6 @@ export const PlaylistDetailPage = () => {
   const { auth } = useGlobal();
   const { publishPlaylist } = useMediaPublish();
   const { addRecentSong, isPlaylistFavorite, togglePlaylist } = useLibrary();
-  const {
-    targetRef: socialTriggerRef,
-    isVisible: socialVisible,
-    setIsVisible: setSocialVisible,
-  } = useVisibilityTrigger();
   const { playlist, isLoading, error } = usePlaylistDetail(
     decodedPublisher,
     decodedIdentifier
@@ -92,16 +86,12 @@ export const PlaylistDetailPage = () => {
     entityId: playlist?.identifier,
     entityPublisher: playlist?.publisher,
     title: playlist?.title,
-    enabled: socialVisible,
+    enabled: Boolean(playlist?.identifier && playlist?.publisher),
   });
 
   useEffect(() => {
     setOrderedSongs(playlist?.songs || []);
   }, [playlist]);
-
-  useEffect(() => {
-    setSocialVisible(false);
-  }, [decodedIdentifier, decodedPublisher, setSocialVisible]);
 
   const isOwner = useMemo(() => {
     if (!auth?.name || !playlist?.publisher) return false;
@@ -284,9 +274,12 @@ export const PlaylistDetailPage = () => {
                 meta={[
                   'PLAYLIST',
                   `${playlist.songCount} tracks`,
-                  ...(socialVisible
-                    ? [`${likeCount} likes`, `${comments.length} comments`]
-                    : ['Social on demand']),
+                  engagementLoading
+                    ? 'Loading social...'
+                    : `${likeCount} likes`,
+                  engagementLoading
+                    ? 'Loading comments...'
+                    : `${comments.length} comments`,
                   ...(isOwner ? ['Owner edit mode'] : []),
                 ]}
               />
@@ -316,14 +309,8 @@ export const PlaylistDetailPage = () => {
             <Button
               variant={hasLike ? 'contained' : 'outlined'}
               size="large"
-              onClick={() => {
-                if (!socialVisible) {
-                  setSocialVisible(true);
-                  return;
-                }
-                void toggleLike();
-              }}
-              disabled={socialVisible && isUpdatingLike}
+              onClick={() => void toggleLike()}
+              disabled={isUpdatingLike}
               startIcon={
                 hasLike ? (
                   <FavoriteRounded fontSize="small" />
@@ -332,13 +319,11 @@ export const PlaylistDetailPage = () => {
                 )
               }
             >
-              {!socialVisible
-                ? 'Load social'
-                : isUpdatingLike
-                  ? 'Updating like...'
-                  : hasLike
-                    ? 'Unlike'
-                    : 'Like playlist'}
+              {isUpdatingLike
+                ? `Updating like... (${likeCount})`
+                : hasLike
+                  ? `Unlike (${likeCount})`
+                  : `Like playlist (${likeCount})`}
             </Button>
             {isOwner ? (
               <Button
@@ -411,37 +396,27 @@ export const PlaylistDetailPage = () => {
             ))}
           </Stack>
           <Divider />
-          <Stack ref={socialTriggerRef} spacing={1.25}>
-            {!socialVisible ? (
-              <Button
-                variant="outlined"
-                onClick={() => setSocialVisible(true)}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                Load comments and likes
-              </Button>
-            ) : (
-              <CommentSection
-                comments={comments}
-                hiddenCommentIds={hiddenCommentIds}
-                isModerator={isModerator}
-                currentUser={auth?.name || undefined}
-                ownerName={playlist.publisher}
-                isLoading={engagementLoading}
-                isSubmittingComment={isSubmittingComment}
-                isEditingComment={isEditingComment}
-                isModerating={isModerating}
-                onAddComment={(message) => addComment(message)}
-                onReply={(commentId, message) => addComment(message, commentId)}
-                onEdit={(comment, message) => editComment(comment, message)}
-                onDelete={(comment) => removeComment(comment)}
-                onToggleVisibility={(commentId) =>
-                  toggleCommentVisibility(commentId)
-                }
-                canLoadMore={canLoadMoreComments}
-                onLoadMore={loadMoreComments}
-              />
-            )}
+          <Stack spacing={1.25}>
+            <CommentSection
+              comments={comments}
+              hiddenCommentIds={hiddenCommentIds}
+              isModerator={isModerator}
+              currentUser={auth?.name || undefined}
+              ownerName={playlist.publisher}
+              isLoading={engagementLoading}
+              isSubmittingComment={isSubmittingComment}
+              isEditingComment={isEditingComment}
+              isModerating={isModerating}
+              onAddComment={(message) => addComment(message)}
+              onReply={(commentId, message) => addComment(message, commentId)}
+              onEdit={(comment, message) => editComment(comment, message)}
+              onDelete={(comment) => removeComment(comment)}
+              onToggleVisibility={(commentId) =>
+                toggleCommentVisibility(commentId)
+              }
+              canLoadMore={canLoadMoreComments}
+              onLoadMore={loadMoreComments}
+            />
           </Stack>
         </Stack>
       ) : null}
