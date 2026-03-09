@@ -29,6 +29,7 @@ interface RawPlaylistPayload {
   songs?: RawPlaylistSong[];
   title?: string;
   description?: string;
+  publishedDate?: string;
 }
 
 const normalizeString = (value: unknown): string => {
@@ -58,6 +59,7 @@ const mapPlaylistSummary = (
     publisher,
     title: title || 'Untitled playlist',
     description: description || undefined,
+    publishedDate: normalizeString(resource.metadata?.publishedDate),
     created: resource.created,
     updated: resource.updated,
     status: resource.status,
@@ -231,6 +233,8 @@ export const fetchPlaylistDetail = async (
     ...summary,
     title: normalizeString(payload?.title) || summary.title,
     description: normalizeString(payload?.description) || summary.description,
+    publishedDate:
+      normalizeString(payload?.publishedDate) || summary.publishedDate,
     songCount: songs.length,
     songs,
   };

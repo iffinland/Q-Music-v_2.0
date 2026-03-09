@@ -118,6 +118,7 @@ export const PlaylistsPage = () => {
                     title: playlist.title,
                     publisher: playlist.publisher,
                     description: playlist.description,
+                    publishedDate: playlist.publishedDate,
                     songCount: playlist.songCount,
                   })}
                   meta={['PLAYLIST', `${playlist.songCount} tracks`]}

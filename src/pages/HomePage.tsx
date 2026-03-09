@@ -141,6 +141,7 @@ export const HomePage = () => {
                 title: playlists[0].title,
                 publisher: playlists[0].publisher,
                 description: playlists[0].description,
+                publishedDate: playlists[0].publishedDate,
                 songCount: playlists[0].songCount,
               })}
               meta={[

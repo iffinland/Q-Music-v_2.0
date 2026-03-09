@@ -1,6 +1,14 @@
-import { objectToBase64, useGlobal, usePublish } from 'qapp-core';
+import {
+  objectToBase64,
+  useAllResourceStatus,
+  useGlobal,
+  usePublish,
+} from 'qapp-core';
 import { searchQdnResources } from '../services/qdn';
 import type { PlaylistSongReference, SongSummary } from '../types/media';
+
+type ResourceToPublish =
+  Parameters<ReturnType<typeof usePublish>['publishMultipleResources']>[0][number];
 
 export interface CoverCropSettings {
   zoom: number;
@@ -8,26 +16,56 @@ export interface CoverCropSettings {
   offsetY: number;
 }
 
-interface PublishSongInput {
+export interface PublishSongInput {
   title: string;
   artist: string;
+  album?: string;
   genre?: string;
   mood?: string;
   language?: string;
   notes?: string;
+  publishedDate?: string;
   audioFile: File;
   coverFile?: File | null;
   coverCrop?: CoverCropSettings;
   existingIdentifier?: string;
 }
 
-interface PublishPlaylistInput {
+export interface PublishPlaylistInput {
   title: string;
   description?: string;
   songs: PlaylistSongReference[];
+  publishedDate?: string;
   coverFile?: File | null;
   coverCrop?: CoverCropSettings;
   existingIdentifier?: string;
+}
+
+export interface PreparedSongPublish {
+  identifier: string;
+  publisher: string;
+  title: string;
+  artist: string;
+  album?: string;
+  description: string;
+  audioFile: File;
+  coverFile?: File | null;
+  coverCrop?: CoverCropSettings;
+  audioResource: ResourceToPublish;
+  thumbnailResource?: ResourceToPublish;
+}
+
+export interface PreparedPlaylistPublish {
+  identifier: string;
+  publisher: string;
+  title: string;
+  description: string;
+  songs: PlaylistSongReference[];
+  publishedDate?: string;
+  coverFile?: File | null;
+  coverCrop?: CoverCropSettings;
+  playlistResource: ResourceToPublish;
+  thumbnailResource?: ResourceToPublish;
 }
 
 const sanitizeText = (value: string) => value.trim().replace(/\s+/g, ' ');
@@ -185,10 +223,12 @@ const buildSongDescription = (
   const entries = [
     ['title', sanitizeText(input.title)],
     ['author', sanitizeText(input.artist)],
+    ['album', sanitizeText(input.album || '')],
     ['genre', sanitizeText(input.genre || '')],
     ['mood', sanitizeText(input.mood || '')],
     ['language', sanitizeText(input.language || '')],
     ['notes', sanitizeText(input.notes || '')],
+    ['publishedDate', sanitizeText(input.publishedDate || '')],
   ].filter(([, value]) => value.length > 0);
 
   return entries.map(([key, value]) => `${key}=${value}`).join(';');
@@ -206,6 +246,7 @@ export const mapSongToPlaylistReference = (
 export const useMediaPublish = () => {
   const { auth } = useGlobal();
   const { publishMultipleResources } = usePublish();
+  const resourceStatuses = useAllResourceStatus();
 
   const ensurePublisher = () => {
     const publisher = auth?.name?.trim();
@@ -216,7 +257,7 @@ export const useMediaPublish = () => {
   };
 
   const publishWithVerification = async (params: {
-    resources: Parameters<typeof publishMultipleResources>[0];
+    resources: ResourceToPublish[];
     verifyService: 'AUDIO' | 'PLAYLIST';
     publisher: string;
     identifier: string;
@@ -242,7 +283,7 @@ export const useMediaPublish = () => {
     }
   };
 
-  const publishSong = async (input: PublishSongInput) => {
+  const buildSongPublish = async (input: PublishSongInput) => {
     const publisher = ensurePublisher();
     const title = sanitizeText(input.title);
     const artist = sanitizeText(input.artist);
@@ -265,55 +306,55 @@ export const useMediaPublish = () => {
     const description = buildSongDescription({
       title,
       artist,
+      album: input.album,
       genre: input.genre,
       mood: input.mood,
       language: input.language,
       notes: input.notes,
+      publishedDate: input.publishedDate,
     });
     const extension = input.audioFile.name.split('.').pop() || 'audio';
     const filename = `${identifierSegment}.${extension}`;
 
-    const resources: Parameters<typeof publishMultipleResources>[0] = [
-      {
-        name: publisher,
-        service: 'AUDIO',
-        identifier,
-        title,
-        description,
-        file: input.audioFile,
-        filename,
-      },
-    ];
-
-    if (input.coverFile) {
-      resources.push({
-        name: publisher,
-        service: 'THUMBNAIL',
-        identifier,
-        data64: await processCoverImage(input.coverFile, input.coverCrop),
-      });
-    }
-
-    await publishWithVerification({
-      resources,
-      verifyService: 'AUDIO',
-      publisher,
+    const audioResource: ResourceToPublish = {
+      name: publisher,
+      service: 'AUDIO',
       identifier,
-    });
+      title,
+      description,
+      file: input.audioFile,
+      filename,
+    };
+
+    const thumbnailResource = input.coverFile
+      ? ({
+          name: publisher,
+          service: 'THUMBNAIL',
+          identifier,
+          data64: await processCoverImage(input.coverFile, input.coverCrop),
+        } as ResourceToPublish)
+      : undefined;
 
     return {
       identifier,
       publisher,
       title,
       artist,
+      album: sanitizeText(input.album || '') || undefined,
       description,
-    };
+      audioFile: input.audioFile,
+      coverFile: input.coverFile,
+      coverCrop: input.coverCrop,
+      audioResource,
+      thumbnailResource,
+    } satisfies PreparedSongPublish;
   };
 
-  const publishPlaylist = async (input: PublishPlaylistInput) => {
+  const buildPlaylistPublish = async (input: PublishPlaylistInput) => {
     const publisher = ensurePublisher();
     const title = sanitizeText(input.title);
     const description = sanitizeText(input.description || '');
+    const publishedDate = sanitizeText(input.publishedDate || '');
 
     if (!title) {
       throw new Error('Playlist title is required.');
@@ -337,35 +378,27 @@ export const useMediaPublish = () => {
     const payload = {
       title,
       description,
+      publishedDate: publishedDate || undefined,
       songs: input.songs,
     };
 
-    const resources: Parameters<typeof publishMultipleResources>[0] = [
-      {
-        name: publisher,
-        service: 'PLAYLIST',
-        identifier,
-        title,
-        description,
-        data64: await objectToBase64(payload),
-      },
-    ];
-
-    if (input.coverFile) {
-      resources.push({
-        name: publisher,
-        service: 'THUMBNAIL',
-        identifier,
-        data64: await processCoverImage(input.coverFile, input.coverCrop),
-      });
-    }
-
-    await publishWithVerification({
-      resources,
-      verifyService: 'PLAYLIST',
-      publisher,
+    const playlistResource: ResourceToPublish = {
+      name: publisher,
+      service: 'PLAYLIST',
       identifier,
-    });
+      title,
+      description,
+      data64: await objectToBase64(payload),
+    };
+
+    const thumbnailResource = input.coverFile
+      ? ({
+          name: publisher,
+          service: 'THUMBNAIL',
+          identifier,
+          data64: await processCoverImage(input.coverFile, input.coverCrop),
+        } as ResourceToPublish)
+      : undefined;
 
     return {
       identifier,
@@ -373,11 +406,142 @@ export const useMediaPublish = () => {
       title,
       description,
       songs: input.songs,
+      publishedDate: publishedDate || undefined,
+      coverFile: input.coverFile,
+      coverCrop: input.coverCrop,
+      playlistResource,
+      thumbnailResource,
+    } satisfies PreparedPlaylistPublish;
+  };
+
+  const publishResourceBatch = async (resources: ResourceToPublish[]) => {
+    if (!resources.length) {
+      return [];
+    }
+
+    const result = await publishMultipleResources(resources);
+    if (result instanceof Error) {
+      throw result;
+    }
+
+    return result;
+  };
+
+  const publishSong = async (input: PublishSongInput) => {
+    const prepared = await buildSongPublish(input);
+    const resources: ResourceToPublish[] = [prepared.audioResource];
+
+    if (prepared.thumbnailResource) {
+      resources.push(prepared.thumbnailResource);
+    }
+
+    await publishWithVerification({
+      resources,
+      verifyService: 'AUDIO',
+      publisher: prepared.publisher,
+      identifier: prepared.identifier,
+    });
+
+    return {
+      identifier: prepared.identifier,
+      publisher: prepared.publisher,
+      title: prepared.title,
+      artist: prepared.artist,
+      album: prepared.album,
+      description: prepared.description,
     };
+  };
+
+  const publishPlaylist = async (input: PublishPlaylistInput) => {
+    const prepared = await buildPlaylistPublish(input);
+    const resources: ResourceToPublish[] = [prepared.playlistResource];
+
+    if (prepared.thumbnailResource) {
+      resources.push(prepared.thumbnailResource);
+    }
+
+    await publishWithVerification({
+      resources,
+      verifyService: 'PLAYLIST',
+      publisher: prepared.publisher,
+      identifier: prepared.identifier,
+    });
+
+    return {
+      identifier: prepared.identifier,
+      publisher: prepared.publisher,
+      title: prepared.title,
+      description: prepared.description,
+      songs: prepared.songs,
+    };
+  };
+
+  const publishSongAudioBatch = async (songs: PreparedSongPublish[]) => {
+    await publishResourceBatch(songs.map((song) => song.audioResource));
+    return songs.map((song) => ({
+      identifier: song.identifier,
+      publisher: song.publisher,
+      title: song.title,
+      artist: song.artist,
+      album: song.album,
+      description: song.description,
+    }));
+  };
+
+  const publishSongThumbnailBatch = async (songs: PreparedSongPublish[]) => {
+    const resources = songs
+      .map((song) => song.thumbnailResource)
+      .filter((item): item is ResourceToPublish => Boolean(item));
+
+    await publishResourceBatch(resources);
+    return resources.length;
+  };
+
+  const publishPlaylistResourceBatch = async (
+    playlist: PreparedPlaylistPublish
+  ) => {
+    await publishResourceBatch([playlist.playlistResource]);
+    return {
+      identifier: playlist.identifier,
+      publisher: playlist.publisher,
+      title: playlist.title,
+      description: playlist.description,
+      songs: playlist.songs,
+    };
+  };
+
+  const publishPlaylistThumbnailBatch = async (
+    playlist: PreparedPlaylistPublish
+  ) => {
+    if (!playlist.thumbnailResource) {
+      return 0;
+    }
+
+    await publishResourceBatch([playlist.thumbnailResource]);
+    return 1;
+  };
+
+  const getBatchStatuses = (identifiers: string[]) => {
+    if (!identifiers.length) {
+      return [];
+    }
+
+    const identifierSet = new Set(identifiers);
+    return resourceStatuses.filter((status) =>
+      identifierSet.has(status.metadata.identifier)
+    );
   };
 
   return {
     publisher: auth?.name || null,
+    buildSongPublish,
+    buildPlaylistPublish,
+    publishResourceBatch,
+    publishSongAudioBatch,
+    publishSongThumbnailBatch,
+    publishPlaylistResourceBatch,
+    publishPlaylistThumbnailBatch,
+    getBatchStatuses,
     publishSong,
     publishPlaylist,
   };

@@ -22,7 +22,13 @@ const parseDescriptionMap = (description: unknown, cacheKey?: string) => {
       const [rawKey, rawValue] = pair.split('=');
       if (!rawKey || !rawValue) return;
       const key = rawKey.trim();
-      if (key !== 'title' && key !== 'author') return;
+      if (
+        key !== 'title' &&
+        key !== 'author' &&
+        key !== 'album' &&
+        key !== 'publishedDate'
+      )
+        return;
       parsed[key] = rawValue.trim();
     });
   }
@@ -59,10 +65,12 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
       parsedDescription.title ||
       identifier.replace(SONG_PREFIX, '').replace(/[_-]+/g, ' ').trim(),
     artist: parsedDescription.author || publisher,
+    album: parsedDescription.album,
     description:
       typeof resource.metadata?.description === 'string'
         ? resource.metadata.description
         : undefined,
+    publishedDate: parsedDescription.publishedDate,
     created: resource.created,
     updated: resource.updated,
     status: resource.status,

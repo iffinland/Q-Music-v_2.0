@@ -1,6 +1,7 @@
 import { Box, Skeleton, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { useQdnResource } from '../../hooks/useQdnResource';
+import { ImageLightbox } from './ImageLightbox';
 
 interface ArtworkThumbProps {
   kind: 'song' | 'playlist';
@@ -62,22 +63,28 @@ export const ArtworkThumb = ({
 
   if (artworkUrl) {
     return (
-      <Box
-        ref={hostRef}
-        component="img"
-        src={artworkUrl}
-        alt={title}
-        loading="lazy"
-        sx={{
-          width: size,
-          height: size,
-          objectFit: 'cover',
-          borderRadius: radius,
-          border: '1px solid',
-          borderColor: 'divider',
-          flexShrink: 0,
-        }}
-      />
+      <ImageLightbox src={artworkUrl} alt={title}>
+        {({ open }) => (
+          <Box
+            ref={hostRef}
+            component="img"
+            src={artworkUrl}
+            alt={title}
+            loading="lazy"
+            onClick={open}
+            sx={{
+              width: size,
+              height: size,
+              objectFit: 'cover',
+              borderRadius: radius,
+              border: '1px solid',
+              borderColor: 'divider',
+              flexShrink: 0,
+              cursor: 'zoom-in',
+            }}
+          />
+        )}
+      </ImageLightbox>
     );
   }
 

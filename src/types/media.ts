@@ -16,7 +16,9 @@ export interface SongSummary {
   publisher: string;
   title: string;
   artist: string;
+  album?: string;
   description?: string;
+  publishedDate?: string;
   created?: number;
   updated?: number;
   status?: string;
@@ -37,6 +39,7 @@ export interface PlaylistSummary {
   publisher: string;
   title: string;
   description?: string;
+  publishedDate?: string;
   created?: number;
   updated?: number;
   status?: string;

@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ImageLightbox } from '../common/ImageLightbox';
 import { resolveSongStreamUrl } from '../../services/songs';
 import {
   currentTimeAtom,
@@ -362,20 +363,29 @@ export const FloatingMiniPlayer = () => {
           sx={{ cursor: isFloating ? 'grab' : 'default', touchAction: 'none' }}
         >
           {artwork ? (
-            <Box
-              component="img"
-              src={artwork}
-              alt={currentTrack.title}
-              sx={{
-                width: 52,
-                height: 52,
-                objectFit: 'cover',
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'divider',
-                flexShrink: 0,
-              }}
-            />
+            <ImageLightbox src={artwork} alt={currentTrack.title}>
+              {({ open }) => (
+                <Box
+                  component="img"
+                  src={artwork}
+                  alt={currentTrack.title}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    open();
+                  }}
+                  sx={{
+                    width: 52,
+                    height: 52,
+                    objectFit: 'cover',
+                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    flexShrink: 0,
+                    cursor: 'zoom-in',
+                  }}
+                />
+              )}
+            </ImageLightbox>
           ) : null}
           <Box sx={{ minWidth: 0, flex: 1 }}>
             <Typography

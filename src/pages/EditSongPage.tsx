@@ -34,10 +34,12 @@ export const EditSongPage = () => {
   const { publishSong } = useMediaPublish();
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
+  const [album, setAlbum] = useState('');
   const [genre, setGenre] = useState('');
   const [mood, setMood] = useState('');
   const [language, setLanguage] = useState('');
   const [notes, setNotes] = useState('');
+  const [publishedDate, setPublishedDate] = useState('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -50,10 +52,12 @@ export const EditSongPage = () => {
     const parsed = parseSongMetadata(song.description);
     setTitle(song.title);
     setArtist(song.artist);
+    setAlbum(parsed.album || song.album || '');
     setGenre(parsed.genre || '');
     setMood(parsed.mood || '');
     setLanguage(parsed.language || '');
     setNotes(parsed.notes || '');
+    setPublishedDate(parsed.publishedDate || '');
   }, [song]);
 
   const handleSave = async () => {
@@ -113,10 +117,12 @@ export const EditSongPage = () => {
       const result = await publishSong({
         title: title.trim() || song.title,
         artist: artist.trim() || song.artist,
+        album,
         genre,
         mood,
         language,
         notes,
+        publishedDate,
         audioFile: fileToPublish,
         coverFile,
         existingIdentifier: song.identifier,
@@ -178,6 +184,11 @@ export const EditSongPage = () => {
             onChange={(event) => setArtist(event.target.value)}
           />
           <TextField
+            label="Album"
+            value={album}
+            onChange={(event) => setAlbum(event.target.value)}
+          />
+          <TextField
             label="Genre"
             value={genre}
             onChange={(event) => setGenre(event.target.value)}
@@ -198,6 +209,13 @@ export const EditSongPage = () => {
             minRows={3}
             value={notes}
             onChange={(event) => setNotes(event.target.value)}
+          />
+          <TextField
+            label="Publication date"
+            type="date"
+            value={publishedDate}
+            onChange={(event) => setPublishedDate(event.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
           />
           <Button variant="outlined" component="label">
             {audioFile

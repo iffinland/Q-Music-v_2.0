@@ -32,6 +32,7 @@ export const EditPlaylistPage = () => {
   const { publishPlaylist } = useMediaPublish();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [publishedDate, setPublishedDate] = useState('');
   const [selectedSongKeys, setSelectedSongKeys] = useState<string[]>([]);
   const [songQuery, setSongQuery] = useState('');
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -43,6 +44,7 @@ export const EditPlaylistPage = () => {
     if (!playlist) return;
     setTitle(playlist.title);
     setDescription(playlist.description || '');
+    setPublishedDate(playlist.publishedDate || '');
     setSelectedSongKeys(playlist.songs.map((song) => toSongKey(song)));
   }, [playlist]);
 
@@ -139,6 +141,7 @@ export const EditPlaylistPage = () => {
       const result = await publishPlaylist({
         title: title.trim() || playlist.title,
         description,
+        publishedDate,
         songs: songsToPublish.map(mapSongToPlaylistReference),
         coverFile,
         existingIdentifier: playlist.identifier,
@@ -195,6 +198,13 @@ export const EditPlaylistPage = () => {
             minRows={3}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
+          />
+          <TextField
+            label="Publication date"
+            type="date"
+            value={publishedDate}
+            onChange={(event) => setPublishedDate(event.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
           />
           <Button variant="outlined" component="label">
             {coverFile

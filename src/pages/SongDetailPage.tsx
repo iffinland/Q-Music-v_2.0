@@ -12,6 +12,7 @@ import { useGlobal } from 'qapp-core';
 import { useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { CommentSection } from '../components/common/CommentSection';
+import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
 import { useEngagement } from '../hooks/useEngagement';
@@ -135,19 +136,25 @@ export const SongDetailPage = () => {
           <Grid container spacing={2.25}>
             {artworkUrl ? (
               <Grid size={{ xs: 12, md: 4 }}>
-                <Box
-                  component="img"
-                  src={artworkUrl}
-                  alt={song.title}
-                  sx={{
-                    width: '100%',
-                    maxWidth: 320,
-                    borderRadius: 2,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    boxShadow: 'var(--qm-shadow-soft)',
-                  }}
-                />
+                <ImageLightbox src={artworkUrl} alt={song.title}>
+                  {({ open }) => (
+                    <Box
+                      component="img"
+                      src={artworkUrl}
+                      alt={song.title}
+                      onClick={open}
+                      sx={{
+                        width: '100%',
+                        maxWidth: 320,
+                        borderRadius: 2,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        boxShadow: 'var(--qm-shadow-soft)',
+                        cursor: 'zoom-in',
+                      }}
+                    />
+                  )}
+                </ImageLightbox>
                 {artworkLoading ? (
                   <Typography
                     variant="caption"
