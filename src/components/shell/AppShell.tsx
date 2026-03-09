@@ -58,19 +58,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
         background: 'var(--qm-panel-bg)',
       }}
     >
-      <Box sx={{ px: 2.5, py: 3 }}>
-        <Typography
-          variant="overline"
-          sx={{ color: 'primary.light', letterSpacing: '0.18em' }}
-        >
-          Q-MUSIC 2.0
-        </Typography>
-        <Typography variant="h4" sx={{ mt: 1 }}>
-          Enjoy & Share music with the Qortal community
-        </Typography>
-      </Box>
-      <Divider />
-      <List sx={{ px: 1.5, py: 2, flexGrow: 1 }}>
+      <List sx={{ px: 1.5, pt: 2.5, pb: 2, flexGrow: 1 }}>
         {navigationItems.map((item) => {
           const selected =
             item.to === '/'
@@ -185,11 +173,51 @@ export const AppShell = ({ children }: AppShellProps) => {
           >
             <MenuRounded />
           </IconButton>
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h6">Q-Music</Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              QDN audio workspace
-            </Typography>
+          <Box
+            sx={{
+              flexGrow: 1,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.25,
+              minWidth: 0,
+            }}
+          >
+            <Box
+              component="img"
+              src="./qmusic.png"
+              alt="Q-Music logo"
+              sx={{
+                height: 34,
+                width: 'auto',
+                flexShrink: 0,
+              }}
+            />
+            <Box sx={{ minWidth: 0 }}>
+              <Typography
+                component="div"
+                sx={{
+                  fontSize: '1.35rem',
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  letterSpacing: '0.01em',
+                }}
+              >
+                Q-MUSIC
+              </Typography>
+              <Typography
+                component="div"
+                sx={{
+                  color: 'text.secondary',
+                  fontSize: '0.68rem',
+                  lineHeight: 1.15,
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+              >
+                Enjoy &amp; Share music with the Qortal community
+              </Typography>
+            </Box>
           </Box>
           <Stack direction="row" spacing={1} alignItems="center">
             <Chip
