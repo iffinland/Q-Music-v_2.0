@@ -196,8 +196,15 @@ export const PlaylistDetailPage = () => {
   };
 
   const handleShare = async () => {
-    await copyToClipboard(buildShareLink());
-    setSaveMessage('Playlist link copied.');
+    setSaveError(null);
+    setSaveMessage(null);
+
+    try {
+      await copyToClipboard(buildShareLink());
+      setSaveMessage('Playlist link copied.');
+    } catch {
+      setSaveError('Playlist link could not be copied.');
+    }
   };
 
   return (

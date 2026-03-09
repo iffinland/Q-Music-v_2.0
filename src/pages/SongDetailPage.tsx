@@ -9,6 +9,7 @@ import {
 } from '@mui/material';
 import { FavoriteBorderRounded, FavoriteRounded } from '@mui/icons-material';
 import { useGlobal } from 'qapp-core';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
@@ -25,6 +26,8 @@ import { buildShareLink, copyToClipboard } from '../utils/share';
 export const SongDetailPage = () => {
   const { auth } = useGlobal();
   const { publisher, identifier } = useParams();
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
   const decodedPublisher = publisher
     ? decodeURIComponent(publisher)
     : undefined;
@@ -98,7 +101,15 @@ export const SongDetailPage = () => {
   };
 
   const handleShare = async () => {
-    await copyToClipboard(buildShareLink());
+    setShareError(null);
+    setShareMessage(null);
+
+    try {
+      await copyToClipboard(buildShareLink());
+      setShareMessage('Song link copied.');
+    } catch {
+      setShareError('Song link could not be copied.');
+    }
   };
 
   return (
@@ -118,6 +129,8 @@ export const SongDetailPage = () => {
       {engagementError ? (
         <Alert severity="warning">{engagementError}</Alert>
       ) : null}
+      {shareError ? <Alert severity="error">{shareError}</Alert> : null}
+      {shareMessage ? <Alert severity="success">{shareMessage}</Alert> : null}
       {isLoading ? (
         <Typography variant="body2">Loading song details...</Typography>
       ) : song ? (
