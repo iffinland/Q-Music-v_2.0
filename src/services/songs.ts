@@ -1,15 +1,110 @@
 import {
+  getQdnResourceProperties,
+  getQdnResourceStatus,
   getQdnResourceUrl,
-  isQdnResourceReady,
+  type QdnResourceStatus,
   searchQdnResources,
+  shouldTriggerQdnBuild,
   shouldHideQdnResource,
-  waitForQdnResourceReady,
 } from './qdn';
 import type { QdnSearchResource, SongSummary } from '../types/media';
 
 const SONG_PREFIX = 'enjoymusic_song_';
+const URL_RETRY_COUNT = 2;
+const URL_RETRY_DELAY_MS = 800;
+const STREAM_RESOLVE_TIMEOUT_MS = 45_000;
+const STATUS_POLL_INTERVAL_MS = 1_500;
 
 const descriptionCache = new Map<string, Record<string, string>>();
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+
+const primeResourceUrlResolution = async (
+  service: 'AUDIO' | 'DOCUMENT',
+  publisher: string,
+  identifier: string
+) => {
+  await getQdnResourceProperties({
+    service,
+    name: publisher,
+    identifier,
+  });
+};
+
+const resolvePlayableResourceUrl = async (
+  service: 'AUDIO' | 'DOCUMENT',
+  publisher: string,
+  identifier: string
+) => {
+  await primeResourceUrlResolution(service, publisher, identifier);
+
+  return getQdnResourceUrl(service, publisher, identifier, {
+    retries: URL_RETRY_COUNT,
+    retryDelayMs: URL_RETRY_DELAY_MS,
+  });
+};
+
+const resolveStreamUrlForService = async (
+  service: 'AUDIO' | 'DOCUMENT',
+  publisher: string,
+  identifier: string,
+  onStatusChange?: (status: string, progress?: number) => void
+) => {
+  const startedAt = Date.now();
+  let buildTriggered = false;
+
+  while (Date.now() - startedAt <= STREAM_RESOLVE_TIMEOUT_MS) {
+    let latestStatus: QdnResourceStatus | null = null;
+
+    try {
+      latestStatus = await getQdnResourceStatus({
+        service,
+        name: publisher,
+        identifier,
+      });
+      onStatusChange?.(latestStatus.status, latestStatus.percentLoaded);
+
+      if (!buildTriggered && shouldTriggerQdnBuild(latestStatus.status)) {
+        buildTriggered = true;
+        latestStatus = await getQdnResourceStatus({
+          service,
+          name: publisher,
+          identifier,
+          build: true,
+        });
+        onStatusChange?.(latestStatus.status, latestStatus.percentLoaded);
+      }
+    } catch {
+      // Ignore transient status polling failures and keep trying URL resolution.
+    }
+
+    const nextUrl = await resolvePlayableResourceUrl(
+      service,
+      publisher,
+      identifier
+    );
+    if (nextUrl) {
+      return nextUrl;
+    }
+
+    const normalizedStatus = latestStatus?.status?.trim().toUpperCase() || '';
+    if (
+      normalizedStatus === 'UNSUPPORTED' ||
+      normalizedStatus === 'BLOCKED' ||
+      normalizedStatus === 'NOT_PUBLISHED' ||
+      normalizedStatus === 'MISSING_DATA'
+    ) {
+      return null;
+    }
+
+    await sleep(STATUS_POLL_INTERVAL_MS);
+  }
+
+  return null;
+};
 
 const parseDescriptionMap = (description: unknown, cacheKey?: string) => {
   if (cacheKey && descriptionCache.has(cacheKey)) {
@@ -175,31 +270,22 @@ export const resolveSongStreamUrl = async (
   }
 ): Promise<string | null> => {
   if (options?.waitUntilReady) {
-    const audioStatus = await waitForQdnResourceReady({
-      service: 'AUDIO',
-      name: publisher,
+    const audioUrl = await resolveStreamUrlForService(
+      'AUDIO',
+      publisher,
       identifier,
-      onStatusChange: (status) =>
-        options.onStatusChange?.(status.status, status.percentLoaded),
-    });
-
-    if (isQdnResourceReady(audioStatus.status)) {
-      return getQdnResourceUrl('AUDIO', publisher, identifier);
+      options.onStatusChange
+    );
+    if (audioUrl) {
+      return audioUrl;
     }
 
-    const documentStatus = await waitForQdnResourceReady({
-      service: 'DOCUMENT',
-      name: publisher,
+    return resolveStreamUrlForService(
+      'DOCUMENT',
+      publisher,
       identifier,
-      onStatusChange: (status) =>
-        options.onStatusChange?.(status.status, status.percentLoaded),
-    });
-
-    if (isQdnResourceReady(documentStatus.status)) {
-      return getQdnResourceUrl('DOCUMENT', publisher, identifier);
-    }
-
-    return null;
+      options.onStatusChange
+    );
   }
 
   const audioUrl = await getQdnResourceUrl('AUDIO', publisher, identifier);

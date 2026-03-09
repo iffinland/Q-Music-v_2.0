@@ -21,6 +21,12 @@ interface FetchQdnResourceParams {
   identifier: string;
 }
 
+interface QdnResourcePropertiesParams {
+  name: string;
+  service: string;
+  identifier: string;
+}
+
 interface QdnResourceStatusParams {
   name: string;
   service: string;
@@ -164,6 +170,69 @@ const setCached = (key: string, value: unknown, ttlMs: number) => {
     value,
   });
   setPersistedCache(key, value, ttlMs);
+};
+
+const clearCached = (key: string) => {
+  resultCache.delete(key);
+  inflightCache.delete(key);
+
+  const storage = getSessionStorage();
+  if (!storage) return;
+
+  try {
+    storage.removeItem(`${SESSION_CACHE_PREFIX}${key}`);
+  } catch {
+    // Ignore storage access failures.
+  }
+};
+
+const parseStableKey = (key: string): Record<string, unknown> | null => {
+  try {
+    const parsed = JSON.parse(key);
+    return parsed && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+export const invalidateQdnCache = (
+  predicate: (payload: Record<string, unknown>) => boolean
+) => {
+  for (const key of resultCache.keys()) {
+    const payload = parseStableKey(key);
+    if (payload && predicate(payload)) {
+      resultCache.delete(key);
+    }
+  }
+
+  for (const key of inflightCache.keys()) {
+    const payload = parseStableKey(key);
+    if (payload && predicate(payload)) {
+      inflightCache.delete(key);
+    }
+  }
+
+  const storage = getSessionStorage();
+  if (!storage) return;
+
+  const keysToRemove: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const storageKey = storage.key(index);
+    if (!storageKey?.startsWith(SESSION_CACHE_PREFIX)) {
+      continue;
+    }
+
+    const payload = parseStableKey(storageKey.slice(SESSION_CACHE_PREFIX.length));
+    if (payload && predicate(payload)) {
+      keysToRemove.push(storageKey);
+    }
+  }
+
+  keysToRemove.forEach((key) => {
+    storage.removeItem(key);
+  });
 };
 
 const normalizeStatusField = (value: unknown) =>
@@ -351,6 +420,25 @@ export const fetchQdnResource = async <T>(
   return result as T;
 };
 
+export const getQdnResourceProperties = async (
+  params: QdnResourcePropertiesParams
+): Promise<Record<string, unknown> | null> => {
+  try {
+    const result = await qortalRequest({
+      action: 'GET_QDN_RESOURCE_PROPERTIES',
+      name: params.name,
+      service: params.service,
+      identifier: params.identifier,
+    } as never);
+
+    return result && typeof result === 'object'
+      ? (result as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 export const getQdnResourceStatus = async (
   params: QdnResourceStatusParams
 ): Promise<QdnResourceStatus> => {
@@ -427,19 +515,54 @@ export const waitForQdnResourceReady = async (
 export const getQdnResourceUrl = async (
   service: string,
   name: string,
-  identifier: string
+  identifier: string,
+  options?: {
+    retries?: number;
+    retryDelayMs?: number;
+  }
 ): Promise<string | null> => {
-  const result = await runCached<unknown>(
-    {
-      action: 'GET_QDN_RESOURCE_URL',
-      service,
-      name,
-      identifier,
-    },
-    5 * 60_000
-  );
+  const payload = {
+    action: 'GET_QDN_RESOURCE_URL',
+    service,
+    name,
+    identifier,
+  } as const;
+  const cacheKey = stableKey(payload);
+  const retries = Math.max(0, options?.retries ?? 0);
+  const retryDelayMs = Math.max(0, options?.retryDelayMs ?? 750);
 
-  return typeof result === 'string' && result !== 'Resource does not exist'
-    ? result
-    : null;
+  const cached = getCached<unknown>(cacheKey);
+  if (typeof cached === 'string' && cached !== 'Resource does not exist') {
+    return cached;
+  }
+  if (cached === 'Resource does not exist') {
+    clearCached(cacheKey);
+  }
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const inflight = inflightCache.get(cacheKey);
+    const request =
+      inflight ??
+      qortalRequest(payload as never)
+        .finally(() => {
+          inflightCache.delete(cacheKey);
+        });
+
+    if (!inflight) {
+      inflightCache.set(cacheKey, request);
+    }
+
+    const result = await request;
+    if (typeof result === 'string' && result !== 'Resource does not exist') {
+      setCached(cacheKey, result, 5 * 60_000);
+      return result;
+    }
+
+    clearCached(cacheKey);
+    if (attempt < retries) {
+      await sleep(retryDelayMs);
+    }
+  }
+
+  return null;
 };
