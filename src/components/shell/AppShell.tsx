@@ -6,6 +6,9 @@ import {
 } from '@mui/icons-material';
 import {
   AppBar,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Box,
   Button,
   Chip,
@@ -16,11 +19,13 @@ import {
   ListItemButton,
   ListItemText,
   Stack,
+  TextField,
   Toolbar,
   Typography,
 } from '@mui/material';
-import { useGlobal } from 'qapp-core';
-import { useState, type ReactNode } from 'react';
+import { keyframes } from '@mui/system';
+import { showError, showSuccess, useGlobal, useQortBalance } from 'qapp-core';
+import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import { useIframe } from '../../hooks/useIframeListener';
@@ -40,6 +45,24 @@ const navigationItems = [
 ];
 
 const drawerWidth = 280;
+const chatGroupId = 827;
+const chatJoinUri = `qortal://use-group/action-join/groupid-${chatGroupId}`;
+const podcastsAppUri = 'qortal://APP/Q-Podcasts';
+const supportRecipient = 'QTowvz1e89MP4FEFpHvEfZ4x8G3LwMpthz';
+const supportFlow = keyframes`
+  0% {
+    background-position: 0% 50%;
+    box-shadow: 0 10px 28px rgba(26, 193, 165, 0.18);
+  }
+  50% {
+    background-position: 100% 50%;
+    box-shadow: 0 12px 32px rgba(58, 151, 255, 0.24);
+  }
+  100% {
+    background-position: 0% 50%;
+    box-shadow: 0 10px 28px rgba(26, 193, 165, 0.18);
+  }
+`;
 
 interface AppShellProps {
   children: ReactNode;
@@ -47,6 +70,97 @@ interface AppShellProps {
 
 const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const location = useLocation();
+  const { value: qortBalance, getBalance, isLoading: isBalanceLoading } =
+    useQortBalance();
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [supportAmount, setSupportAmount] = useState('0');
+  const [isSendingSupport, setIsSendingSupport] = useState(false);
+  const handleJoinChat = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (typeof qortalRequest !== 'function') {
+      return;
+    }
+
+    event.preventDefault();
+    void qortalRequest({
+      action: 'JOIN_GROUP',
+      groupId: chatGroupId,
+    });
+  };
+  const handleOpenPodcasts = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (typeof qortalRequest !== 'function') {
+      return;
+    }
+
+    event.preventDefault();
+    void qortalRequest({
+      action: 'OPEN_NEW_TAB',
+      qortalLink: podcastsAppUri,
+    });
+  };
+  const handleOpenSupport = async () => {
+    setSupportOpen(true);
+
+    if (qortBalance === null) {
+      try {
+        await getBalance();
+      } catch {
+        // The dialog can still open even if balance refresh fails.
+      }
+    }
+  };
+  const handleCloseSupport = () => {
+    if (isSendingSupport) {
+      return;
+    }
+
+    setSupportOpen(false);
+  };
+  const handleSupportAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setSupportAmount(event.target.value);
+  };
+  const handleSendSupport = async () => {
+    const amount = Number(supportAmount);
+
+    if (typeof qortalRequest !== 'function') {
+      showError('Qortal request bridge is not available.');
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showError('Enter a QORT amount greater than 0.');
+      return;
+    }
+
+    if (typeof qortBalance === 'number' && amount > qortBalance) {
+      showError('Entered amount is higher than your wallet balance.');
+      return;
+    }
+
+    try {
+      setIsSendingSupport(true);
+      await qortalRequest({
+        action: 'SEND_COIN',
+        coin: 'QORT',
+        recipient: supportRecipient,
+        amount,
+      });
+      setSupportOpen(false);
+      setSupportAmount('0');
+      showSuccess('Thank you for supporting Q-Music. Transfer sent successfully. 💚');
+      void getBalance().catch(() => undefined);
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Support transfer failed.';
+      showError(message);
+    } finally {
+      setIsSendingSupport(false);
+    }
+  };
+
+  const formattedBalance =
+    typeof qortBalance === 'number' ? qortBalance.toFixed(8) : '0.00000000';
 
   return (
     <Box
@@ -103,6 +217,9 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             <Button
               variant="contained"
               fullWidth
+              component="a"
+              href={chatJoinUri}
+              onClick={handleJoinChat}
               sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
             >
               Join Our Chat
@@ -117,7 +234,9 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             <Button
               variant="outlined"
               fullWidth
-              disabled
+              component="a"
+              href={podcastsAppUri}
+              onClick={handleOpenPodcasts}
               sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
             >
               Podcast
@@ -130,9 +249,77 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             >
               Audiobooks
             </Button>
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleOpenSupport}
+              sx={{
+                justifyContent: 'flex-start',
+                borderRadius: 2,
+                color: '#f5fffd',
+                background:
+                  'linear-gradient(120deg, #0d7286 0%, #18b8a2 38%, #3a97ff 72%, #27d3a8 100%)',
+                backgroundSize: '220% 220%',
+                animation: `${supportFlow} 10s ease-in-out infinite`,
+                '&:hover': {
+                  background:
+                    'linear-gradient(120deg, #0f7f93 0%, #1ac1a5 38%, #45a0ff 72%, #30dbb0 100%)',
+                },
+              }}
+            >
+              Support Project
+            </Button>
           </Stack>
         </Box>
       </Box>
+      <Dialog
+        open={supportOpen}
+        onClose={handleCloseSupport}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Support Project</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.25} sx={{ pt: 1 }}>
+            <Box
+              sx={{
+                borderRadius: 2,
+                px: 1.5,
+                py: 1.25,
+                backgroundColor: 'var(--qm-surface-soft)',
+                border: '1px solid',
+                borderColor: 'divider',
+              }}
+            >
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Wallet balance
+              </Typography>
+              <Typography variant="h6" sx={{ mt: 0.35, fontWeight: 700 }}>
+                {isBalanceLoading ? 'Loading...' : `${formattedBalance} QORT`}
+              </Typography>
+            </Box>
+            <TextField
+              label="Amount"
+              type="number"
+              value={supportAmount}
+              onChange={handleSupportAmountChange}
+              inputProps={{ min: 0, step: '0.00000001' }}
+              fullWidth
+            />
+            <Button
+              variant="contained"
+              fullWidth
+              disabled={isSendingSupport}
+              onClick={handleSendSupport}
+            >
+              {isSendingSupport ? 'Sending...' : 'SEND QORT'}
+            </Button>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              Recipient: {supportRecipient}
+            </Typography>
+          </Stack>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };

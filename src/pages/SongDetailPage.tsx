@@ -9,16 +9,18 @@ import {
 } from '@mui/material';
 import { FavoriteBorderRounded, FavoriteRounded } from '@mui/icons-material';
 import { useGlobal } from 'qapp-core';
-import { useState } from 'react';
+import { useState, type ChangeEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
+import { QortTipModal } from '../components/common/QortTipModal';
 import { SectionCard } from '../components/common/SectionCard';
 import { useEntityComments } from '../hooks/useEntityComments';
 import { useEntityLikes } from '../hooks/useEntityLikes';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
+import { useQortTip } from '../hooks/useQortTip';
 import { useQdnResource } from '../hooks/useQdnResource';
 import { useSongDetail } from '../hooks/useSongDetail';
 import { formatSongCardMetadata } from '../utils/songMetadata';
@@ -86,6 +88,10 @@ export const SongDetailPage = () => {
   });
   const engagementLoading = likesLoading || commentsLoading;
   const engagementError = likesError || commentsError;
+  const tip = useQortTip({
+    recipientName: song?.publisher,
+    entityLabel: 'track',
+  });
 
   const handlePlay = () => {
     if (!song) return;
@@ -119,6 +125,9 @@ export const SongDetailPage = () => {
     } catch {
       setShareError('Song link could not be copied.');
     }
+  };
+  const handleTipAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
+    tip.setAmount(event.target.value);
   };
 
   return (
@@ -238,7 +247,24 @@ export const SongDetailPage = () => {
                   ? `Unlike (${likeCount})`
                   : `Like this song (${likeCount})`}
             </Button>
+            <Button variant="outlined" size="large" onClick={() => void tip.openModal()}>
+              Send tip
+            </Button>
           </Stack>
+          <QortTipModal
+            amount={tip.amount}
+            formattedBalance={tip.formattedBalance}
+            isBalanceLoading={tip.isBalanceLoading}
+            isOpen={tip.isOpen}
+            isResolvingRecipient={tip.isResolvingRecipient}
+            isSending={tip.isSending}
+            onAmountChange={handleTipAmountChange}
+            onClose={tip.closeModal}
+            onSend={() => void tip.sendTip()}
+            recipientAddress={tip.recipientAddress}
+            recipientName={tip.recipientName}
+            resolveError={tip.resolveError}
+          />
           <Divider />
           <Stack spacing={1.25}>
             <CommentSection

@@ -16,17 +16,19 @@ import {
   PlayArrowRounded,
 } from '@mui/icons-material';
 import { useGlobal } from 'qapp-core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
+import { QortTipModal } from '../components/common/QortTipModal';
 import { SectionCard } from '../components/common/SectionCard';
 import { useEntityComments } from '../hooks/useEntityComments';
 import { useEntityLikes } from '../hooks/useEntityLikes';
 import { useMediaPublish } from '../hooks/useMediaPublish';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { usePlaylistDetail } from '../hooks/usePlaylistDetail';
+import { useQortTip } from '../hooks/useQortTip';
 import { useQdnResource } from '../hooks/useQdnResource';
 import { useLibrary } from '../hooks/useLibrary';
 import type { PlaylistSongReference } from '../types/media';
@@ -97,6 +99,10 @@ export const PlaylistDetailPage = () => {
   });
   const engagementLoading = likesLoading || commentsLoading;
   const engagementError = likesError || commentsError;
+  const tip = useQortTip({
+    recipientName: playlist?.publisher,
+    entityLabel: 'playlist',
+  });
 
   useEffect(() => {
     setOrderedSongs(playlist?.songs || []);
@@ -214,6 +220,9 @@ export const PlaylistDetailPage = () => {
     } catch {
       setSaveError('Playlist link could not be copied.');
     }
+  };
+  const handleTipAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
+    tip.setAmount(event.target.value);
   };
 
   return (
@@ -341,6 +350,9 @@ export const PlaylistDetailPage = () => {
                   ? `Unlike (${likeCount})`
                   : `Like playlist (${likeCount})`}
             </Button>
+            <Button variant="outlined" size="large" onClick={() => void tip.openModal()}>
+              Send tip
+            </Button>
             {isOwner ? (
               <Button
                 variant="outlined"
@@ -352,6 +364,20 @@ export const PlaylistDetailPage = () => {
               </Button>
             ) : null}
           </Stack>
+          <QortTipModal
+            amount={tip.amount}
+            formattedBalance={tip.formattedBalance}
+            isBalanceLoading={tip.isBalanceLoading}
+            isOpen={tip.isOpen}
+            isResolvingRecipient={tip.isResolvingRecipient}
+            isSending={tip.isSending}
+            onAmountChange={handleTipAmountChange}
+            onClose={tip.closeModal}
+            onSend={() => void tip.sendTip()}
+            recipientAddress={tip.recipientAddress}
+            recipientName={tip.recipientName}
+            resolveError={tip.resolveError}
+          />
           <Divider />
           <Stack spacing={1.1}>
             <Typography variant="h6" sx={{ lineHeight: 1.08 }}>
