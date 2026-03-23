@@ -20,7 +20,7 @@ export const LibraryPage = () => {
   return (
     <Stack spacing={3}>
       <PageHero
-        eyebrow="LIBRARY"
+        eyebrow=""
         title="Your saved songs, playlists and recent listening history."
         description="Keep the content you care about close, reopen playlists quickly and jump back into recent listening sessions."
       />

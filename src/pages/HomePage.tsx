@@ -24,9 +24,9 @@ export const HomePage = () => {
   return (
     <Stack spacing={3}>
       <PageHero
-        eyebrow="START HERE"
-        title="Browse, publish and collect QDN audio from one focused workspace."
-        description="Songs and playlists stay at the center, with a lightweight mini-player, direct publish routes and a personal library for the audio you want to keep close."
+        eyebrow=""
+        title="Listen, Browse, Publish, Download, Earn QORT and organize collect QDN audio from one focused workspace."
+        description=""
         actions={
           <>
             <HeroButton component={RouterLink} to="/songs" variant="contained">

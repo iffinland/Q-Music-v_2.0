@@ -864,7 +864,7 @@ export const PublishPage = () => {
   return (
     <Stack spacing={3}>
       <PageHero
-        eyebrow="PUBLISH"
+        eyebrow=""
         title="Publish one song or batch a whole folder through the same route."
         description="Single-file publishing stays intact. Folder publishing prepares song audio in one multi-resource transaction, then sends thumbnails and playlist payloads in separate steps for better reliability."
       />

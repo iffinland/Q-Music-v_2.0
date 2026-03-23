@@ -69,7 +69,7 @@ export const MyMusicPage = () => {
   return (
     <Stack spacing={3}>
       <PageHero
-        eyebrow="MY MUSIC"
+        eyebrow=""
         title="Manage your published songs and playlists."
         description="This workspace is for owner-side actions: review what is already live on QDN, open it directly, or jump into edit flows for republishing updates."
       />

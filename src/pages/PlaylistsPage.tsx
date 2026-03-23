@@ -55,9 +55,9 @@ export const PlaylistsPage = () => {
   return (
     <Stack spacing={3}>
       <PageHero
-        eyebrow="PLAYLISTS"
+        eyebrow=""
         title="Keep playlist browsing familiar while the underlying stack changes."
-        description="The old app treated playlists as a major discovery surface. This new page keeps that shape, but the data and interactions will be rebuilt around qapp-core-compatible services."
+        description=""
       />
       {error ? <Alert severity="warning">{error}</Alert> : null}
       <Stack

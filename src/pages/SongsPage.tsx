@@ -95,9 +95,9 @@ export const SongsPage = () => {
   return (
     <Stack spacing={3}>
       <PageHero
-        eyebrow="BROWSE ALL"
+        eyebrow=""
         title="Audio discovery is the first real migration target."
-        description="This page stands in for the old browse-all songs experience. Next, the demo cards will be replaced with QDN-backed queries, filters and actual playback."
+        description="In the future, there will also be the option to browse stories published through Ear-Bump here."
       />
       {error ? <Alert severity="warning">{error}</Alert> : null}
       <Stack
