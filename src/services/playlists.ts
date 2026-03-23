@@ -12,6 +12,7 @@ import type {
   PlaylistSummary,
   QdnSearchResource,
 } from '../types/media';
+import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 
 const PLAYLIST_PREFIX = 'enjoymusic_playlist_';
 
@@ -47,7 +48,7 @@ const mapPlaylistSummary = (
   const title =
     normalizeString(resource.metadata?.title) ||
     normalizeString(resource.title) ||
-    identifier.replace(PLAYLIST_PREFIX, '').replace(/[_-]+/g, ' ').trim();
+    buildTitleFromIdentifier(identifier, PLAYLIST_PREFIX);
 
   const description =
     normalizeString(resource.metadata?.description) ||

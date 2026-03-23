@@ -33,8 +33,14 @@ import { useQdnResource } from '../hooks/useQdnResource';
 import { useLibrary } from '../hooks/useLibrary';
 import type { PlaylistSongReference } from '../types/media';
 import { emitMediaRefresh } from '../utils/mediaEvents';
+import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
 import { buildShareLink, copyToClipboard } from '../utils/share';
+
+const SONG_PREFIX = 'enjoymusic_song_';
+
+const resolvePlaylistSongTitle = (song: PlaylistSongReference) =>
+  song.title || buildTitleFromIdentifier(song.identifier, SONG_PREFIX);
 
 export const PlaylistDetailPage = () => {
   const { name, playlistId } = useParams();
@@ -121,7 +127,7 @@ export const PlaylistDetailPage = () => {
         identifier: song.identifier,
         publisher: song.publisher,
         service: 'AUDIO' as const,
-        title: song.title || song.identifier,
+        title: resolvePlaylistSongTitle(song),
         artist: song.artist || song.publisher,
         context: playlist?.title,
       })),
@@ -143,7 +149,7 @@ export const PlaylistDetailPage = () => {
         id: source.identifier,
         identifier: source.identifier,
         publisher: source.publisher,
-        title: source.title || source.identifier,
+        title: resolvePlaylistSongTitle(source),
         artist: source.artist || source.publisher,
         service: 'AUDIO',
         mediaType: 'SONG',
@@ -401,7 +407,7 @@ export const PlaylistDetailPage = () => {
               >
                 <Stack spacing={0.35}>
                   <Typography variant="body1" sx={{ lineHeight: 1.25 }}>
-                    {index + 1}. {song.title || song.identifier}
+                    {index + 1}. {resolvePlaylistSongTitle(song)}
                   </Typography>
                   <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                     {song.artist || song.publisher}

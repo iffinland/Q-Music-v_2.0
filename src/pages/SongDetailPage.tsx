@@ -23,6 +23,7 @@ import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { useQortTip } from '../hooks/useQortTip';
 import { useQdnResource } from '../hooks/useQdnResource';
 import { useSongDetail } from '../hooks/useSongDetail';
+import { downloadQdnAudioResource } from '../utils/download';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 import { buildShareLink, copyToClipboard } from '../utils/share';
 
@@ -31,6 +32,9 @@ export const SongDetailPage = () => {
   const { publisher, identifier } = useParams();
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
   const decodedPublisher = publisher
     ? decodeURIComponent(publisher)
     : undefined;
@@ -126,6 +130,50 @@ export const SongDetailPage = () => {
       setShareError('Song link could not be copied.');
     }
   };
+
+  const handleDownload = async () => {
+    if (!song) return;
+
+    setDownloadError(null);
+    setDownloadMessage(null);
+    setIsDownloading(true);
+
+    try {
+      if (typeof qortalRequest !== 'function') {
+        throw new Error('Qortal request bridge is not available.');
+      }
+
+      const downloadUrl =
+        (await qortalRequest({
+          action: 'GET_QDN_RESOURCE_URL',
+          service: 'AUDIO',
+          name: song.publisher,
+          identifier: song.identifier,
+        } as never)) || null;
+
+      if (typeof downloadUrl !== 'string' || !downloadUrl) {
+        throw new Error('Audio resource URL could not be resolved.');
+      }
+
+      const downloadedFilename = await downloadQdnAudioResource({
+        publisher: song.publisher,
+        identifier: song.identifier,
+        title: song.title,
+        resourceUrl: downloadUrl,
+      });
+
+      setDownloadMessage(`Downloaded as ${downloadedFilename}.`);
+    } catch (downloadActionError) {
+      setDownloadError(
+        downloadActionError instanceof Error
+          ? downloadActionError.message
+          : 'Audio could not be downloaded.'
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const handleTipAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
     tip.setAmount(event.target.value);
   };
@@ -149,6 +197,10 @@ export const SongDetailPage = () => {
       ) : null}
       {shareError ? <Alert severity="error">{shareError}</Alert> : null}
       {shareMessage ? <Alert severity="success">{shareMessage}</Alert> : null}
+      {downloadError ? <Alert severity="error">{downloadError}</Alert> : null}
+      {downloadMessage ? (
+        <Alert severity="success">{downloadMessage}</Alert>
+      ) : null}
       {isLoading ? (
         <Typography variant="body2">Loading song details...</Typography>
       ) : song ? (
@@ -249,6 +301,14 @@ export const SongDetailPage = () => {
             </Button>
             <Button variant="outlined" size="large" onClick={() => void tip.openModal()}>
               Send tip
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={() => void handleDownload()}
+              disabled={isDownloading}
+            >
+              {isDownloading ? 'Downloading...' : 'Download this'}
             </Button>
           </Stack>
           <QortTipModal

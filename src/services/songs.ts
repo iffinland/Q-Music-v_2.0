@@ -8,6 +8,7 @@ import {
   shouldHideQdnResource,
 } from './qdn';
 import type { QdnSearchResource, SongSummary } from '../types/media';
+import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 
 const SONG_PREFIX = 'enjoymusic_song_';
 const URL_RETRY_COUNT = 2;
@@ -150,6 +151,8 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
     typeof resource.metadata?.title === 'string'
       ? resource.metadata.title.trim()
       : '';
+  const resourceTitle =
+    typeof resource.title === 'string' ? resource.title.trim() : '';
 
   return {
     id: identifier,
@@ -157,8 +160,9 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
     publisher,
     title:
       metadataTitle ||
+      resourceTitle ||
       parsedDescription.title ||
-      identifier.replace(SONG_PREFIX, '').replace(/[_-]+/g, ' ').trim(),
+      buildTitleFromIdentifier(identifier, SONG_PREFIX),
     artist: parsedDescription.author || publisher,
     album: parsedDescription.album,
     description:

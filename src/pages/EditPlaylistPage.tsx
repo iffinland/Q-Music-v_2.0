@@ -9,13 +9,19 @@ import { usePlaylistDetail } from '../hooks/usePlaylistDetail';
 import { useSongsFeed } from '../hooks/useSongsFeed';
 import { mapSongToPlaylistReference } from '../hooks/useMediaPublish';
 import { emitMediaRefresh } from '../utils/mediaEvents';
+import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 import type { SongSummary } from '../types/media';
+
+const SONG_PREFIX = 'enjoymusic_song_';
 
 const toSongKey = (song: { publisher: string; identifier: string }) =>
   `${song.publisher}:${song.identifier}`;
 
 const isSongSummary = (song: SongSummary | undefined): song is SongSummary =>
   Boolean(song);
+
+const resolveSongTitle = (song: { title?: string; identifier: string }) =>
+  song.title || buildTitleFromIdentifier(song.identifier, SONG_PREFIX);
 
 export const EditPlaylistPage = () => {
   const { auth } = useGlobal();
@@ -63,7 +69,7 @@ export const EditPlaylistPage = () => {
           id: song.identifier,
           identifier: song.identifier,
           publisher: song.publisher,
-          title: song.title || song.identifier,
+          title: resolveSongTitle(song),
           artist: song.artist || song.publisher,
           service: 'AUDIO',
           mediaType: 'SONG',
@@ -132,7 +138,7 @@ export const EditPlaylistPage = () => {
               id: song.identifier,
               identifier: song.identifier,
               publisher: song.publisher,
-              title: song.title || song.identifier,
+              title: resolveSongTitle(song),
               artist: song.artist || song.publisher,
               service: 'AUDIO',
               mediaType: 'SONG',
