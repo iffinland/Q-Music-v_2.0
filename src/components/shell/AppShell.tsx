@@ -47,7 +47,11 @@ import { useIframe } from '../../hooks/useIframeListener';
 import { librarySyncStateAtom } from '../../state/library';
 import { queueLengthAtom } from '../../state/player';
 import { EnumTheme, themeAtom } from '../../state/global/system';
-import { fetchChangeLog, publishChangeLog } from '../../services/changeLog';
+import {
+  fetchChangeLog,
+  publishChangeLog,
+  type ChangeLogHistoryEntry,
+} from '../../services/changeLog';
 import { LibrarySync } from './LibrarySync';
 import { FloatingMiniPlayer } from '../player/FloatingMiniPlayer';
 
@@ -97,7 +101,9 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const [supportAmount, setSupportAmount] = useState('0');
   const [isSendingSupport, setIsSendingSupport] = useState(false);
   const [changeLogOpen, setChangeLogOpen] = useState(false);
-  const [changeLogHtml, setChangeLogHtml] = useState('');
+  const [changeLogEntries, setChangeLogEntries] = useState<
+    ChangeLogHistoryEntry[]
+  >([]);
   const [draftChangeLogHtml, setDraftChangeLogHtml] = useState('');
   const [changeLogUpdatedAt, setChangeLogUpdatedAt] = useState<number | null>(
     null
@@ -123,9 +129,8 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
           return;
         }
 
-        const nextHtml = entry?.html || '';
-        setChangeLogHtml(nextHtml);
-        setDraftChangeLogHtml(nextHtml);
+        setChangeLogEntries(entry?.entries || []);
+        setDraftChangeLogHtml('');
         setChangeLogUpdatedAt(entry?.updatedAt || null);
       } catch (error) {
         if (!cancelled) {
@@ -234,10 +239,14 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
         publisher: auth.name,
         html: draftChangeLogHtml,
       });
-      const savedAt = Date.now();
-      setChangeLogHtml(draftChangeLogHtml);
-      setChangeLogUpdatedAt(savedAt);
-      showSuccess('Change log updated successfully.');
+      const nextDocument = await fetchChangeLog();
+      setChangeLogEntries(nextDocument?.entries || []);
+      setDraftChangeLogHtml('');
+      if (editorRef.current) {
+        editorRef.current.innerHTML = '';
+      }
+      setChangeLogUpdatedAt(nextDocument?.updatedAt || Date.now());
+      showSuccess('Change log entry published successfully.');
     } catch (error) {
       showError(
         error instanceof Error && error.message
@@ -464,46 +473,68 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
           <Stack spacing={2.25} sx={{ pt: 1 }}>
             {changeLogUpdatedAt ? (
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                Last updated: {new Date(changeLogUpdatedAt).toLocaleString()}
+                Last updated:{' '}
+                {new Intl.DateTimeFormat(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                }).format(changeLogUpdatedAt)}
               </Typography>
             ) : null}
-            <Box
-              sx={{
-                minHeight: 180,
-                borderRadius: 2,
-                border: '1px solid',
-                borderColor: 'divider',
-                p: 2,
-                backgroundColor: 'var(--qm-surface-soft)',
-              }}
-            >
+            <Stack spacing={1.5}>
               {isChangeLogLoading ? (
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                   Loading change log...
                 </Typography>
-              ) : changeLogHtml ? (
-                <Box
-                  sx={{
-                    '& p': { mt: 0, mb: 1.25 },
-                    '& ul, & ol': { pl: 3, my: 1.25 },
-                    '& li': { mb: 0.5 },
-                    '& strong': { fontWeight: 700 },
-                    '& em': { fontStyle: 'italic' },
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: sanitizedContent(changeLogHtml),
-                  }}
-                />
+              ) : changeLogEntries.length ? (
+                changeLogEntries.map((entry, index) => (
+                  <Box
+                    key={entry.id}
+                    sx={{
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      p: 2,
+                      backgroundColor: 'var(--qm-surface-soft)',
+                    }}
+                  >
+                    <Stack spacing={1.25}>
+                      <Typography
+                        variant="caption"
+                        sx={{ color: 'text.secondary' }}
+                      >
+                        Entry {changeLogEntries.length - index} •{' '}
+                        {new Intl.DateTimeFormat(undefined, {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        }).format(entry.publishedAt)}
+                      </Typography>
+                      <Box
+                        sx={{
+                          '& p': { mt: 0, mb: 1.25 },
+                          '& ul, & ol': { pl: 3, my: 1.25 },
+                          '& li': { mb: 0.5 },
+                          '& strong': { fontWeight: 700 },
+                          '& em': { fontStyle: 'italic' },
+                        }}
+                        dangerouslySetInnerHTML={{
+                          __html: sanitizedContent(entry.html),
+                        }}
+                      />
+                    </Stack>
+                  </Box>
+                ))
               ) : (
                 <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                   No change log entries have been published yet.
                 </Typography>
               )}
-            </Box>
+            </Stack>
             {isOwner ? (
               <>
                 <Divider />
-                <Typography variant="subtitle2">Edit change log</Typography>
+                <Typography variant="subtitle2">
+                  Add new change log entry
+                </Typography>
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   <Button
                     variant="outlined"
@@ -569,9 +600,13 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             <Button
               variant="contained"
               onClick={handleSaveChangeLog}
-              disabled={isSavingChangeLog || isChangeLogLoading}
+              disabled={
+                isSavingChangeLog ||
+                isChangeLogLoading ||
+                !draftChangeLogHtml.trim()
+              }
             >
-              {isSavingChangeLog ? 'Saving...' : 'Save changes'}
+              {isSavingChangeLog ? 'Publishing...' : 'Publish entry'}
             </Button>
           ) : null}
           <Button variant="outlined" onClick={handleCloseChangeLog}>

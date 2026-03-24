@@ -11,16 +11,24 @@ import { performQortalRequest } from './entityEngagementShared';
 const CHANGE_LOG_IDENTIFIER = 'qmusic_change_log';
 const CHANGE_LOG_SERVICE = 'DOCUMENT' as const;
 const CHANGE_LOG_TITLE = 'Q-Music Change Log';
+const MAX_CHANGE_LOG_ENTRIES = 50;
 
 interface ChangeLogPayload {
+  entries?: ChangeLogHistoryEntry[];
   html?: string;
   updatedAt?: number;
 }
 
-export interface ChangeLogEntry {
+export interface ChangeLogHistoryEntry {
+  id: string;
+  html: string;
+  publishedAt: number;
+}
+
+export interface ChangeLogDocument {
   publisher: string;
   identifier: string;
-  html: string;
+  entries: ChangeLogHistoryEntry[];
   updatedAt: number;
 }
 
@@ -50,7 +58,52 @@ const invalidateChangeLogCache = () => {
   });
 };
 
-export const fetchChangeLog = async (): Promise<ChangeLogEntry | null> => {
+const normalizeEntries = (payload: ChangeLogPayload | null) => {
+  const entries = Array.isArray(payload?.entries)
+    ? payload.entries
+        .map((entry) => {
+          const html = normalizeHtml(entry?.html);
+          if (!html) {
+            return null;
+          }
+
+          return {
+            id:
+              typeof entry?.id === 'string' && entry.id.trim()
+                ? entry.id.trim()
+                : `${entry?.publishedAt || Date.now()}`,
+            html,
+            publishedAt:
+              typeof entry?.publishedAt === 'number'
+                ? entry.publishedAt
+                : Date.now(),
+          } satisfies ChangeLogHistoryEntry;
+        })
+        .filter((entry): entry is ChangeLogHistoryEntry => Boolean(entry))
+    : [];
+
+  if (entries.length > 0) {
+    return [...entries].sort(
+      (left, right) => right.publishedAt - left.publishedAt
+    );
+  }
+
+  const legacyHtml = normalizeHtml(payload?.html);
+  if (!legacyHtml) {
+    return [];
+  }
+
+  return [
+    {
+      id: `legacy-${payload?.updatedAt || Date.now()}`,
+      html: legacyHtml,
+      publishedAt:
+        typeof payload?.updatedAt === 'number' ? payload.updatedAt : Date.now(),
+    },
+  ] satisfies ChangeLogHistoryEntry[];
+};
+
+export const fetchChangeLog = async (): Promise<ChangeLogDocument | null> => {
   const resources = await searchQdnResources({
     mode: 'ALL',
     service: CHANGE_LOG_SERVICE,
@@ -81,13 +134,12 @@ export const fetchChangeLog = async (): Promise<ChangeLogEntry | null> => {
     service: CHANGE_LOG_SERVICE,
     identifier: resource.identifier,
   });
-
-  const html = normalizeHtml(payload?.html);
+  const entries = normalizeEntries(payload);
 
   return {
     publisher: resource.name,
     identifier: resource.identifier,
-    html,
+    entries,
     updatedAt:
       typeof payload?.updatedAt === 'number'
         ? payload.updatedAt
@@ -100,6 +152,19 @@ export const publishChangeLog = async (params: {
   html: string;
 }) => {
   const html = normalizeHtml(params.html);
+  const current = await fetchChangeLog();
+  const nextEntry: ChangeLogHistoryEntry = {
+    id:
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}`,
+    html,
+    publishedAt: Date.now(),
+  };
+  const entries = [nextEntry, ...(current?.entries || [])].slice(
+    0,
+    MAX_CHANGE_LOG_ENTRIES
+  );
 
   await performQortalRequest(
     {
@@ -110,7 +175,7 @@ export const publishChangeLog = async (params: {
       title: CHANGE_LOG_TITLE,
       description: 'Latest Q-Music release notes and updates.',
       data64: await objectToBase64({
-        html,
+        entries,
         updatedAt: Date.now(),
       } satisfies ChangeLogPayload),
       encoding: 'base64',
