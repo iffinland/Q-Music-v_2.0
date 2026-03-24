@@ -54,12 +54,40 @@ const defaultCrop = (): CoverCropSettings => ({
 const defaultSongGenre = 'Electronic';
 
 const songGenres = [
-  'Electronic',
-  'Pop',
-  'Rock',
+  'Alternative',
   'Ambient',
+  'Blues',
+  'Classical',
+  'Country',
+  'Dance',
+  'Deep House',
+  'Disco',
+  'Drum and Bass',
+  'Dubstep',
+  'Electronic',
+  'Euro Dance',
+  'Folk',
+  'Funk',
+  'Gospel',
+  'Hardstyle',
+  'Heavy Metal',
   'Hip Hop',
+  'House',
+  'Indie',
   'Jazz',
+  'Latin',
+  'Lo-fi',
+  'Metal',
+  'Pop',
+  'Punk',
+  'R&B',
+  'Rap',
+  'Reggae',
+  'Rock',
+  'Soul',
+  'Techno',
+  'Trance',
+  'Trap',
 ];
 
 type PublishMode = 'single' | 'folder';
@@ -80,7 +108,11 @@ const StepPanel = ({
   children: ReactNode;
 }) => {
   const chipColor =
-    state === 'complete' ? 'success' : state === 'active' ? 'primary' : 'default';
+    state === 'complete'
+      ? 'success'
+      : state === 'active'
+        ? 'primary'
+        : 'default';
   const chipLabel =
     state === 'complete'
       ? 'Complete'
@@ -112,7 +144,10 @@ const StepPanel = ({
               Step {step}
             </Typography>
             <Typography variant="h5">{title}</Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }}>
+            <Typography
+              variant="body2"
+              sx={{ color: 'text.secondary', mt: 0.5 }}
+            >
               {description}
             </Typography>
           </Box>
@@ -484,7 +519,9 @@ export const PublishPage = () => {
     () => folderSongs.filter((song) => Boolean(song.coverFile)).length,
     [folderSongs]
   );
-  const folderSelectState: StepState = folderSongs.length ? 'complete' : 'active';
+  const folderSelectState: StepState = folderSongs.length
+    ? 'complete'
+    : 'active';
   const folderReviewState: StepState = folderSongs.length ? 'active' : 'locked';
   const folderBulkState: StepState = folderSongs.length ? 'ready' : 'locked';
   const folderTracksState: StepState = folderSongs.length ? 'ready' : 'locked';
@@ -669,7 +706,9 @@ export const PublishPage = () => {
     update: Partial<FolderSongImportDraft>
   ) => {
     setFolderSongs((current) =>
-      current.map((song) => (song.id === songId ? { ...song, ...update } : song))
+      current.map((song) =>
+        song.id === songId ? { ...song, ...update } : song
+      )
     );
   };
 
@@ -705,7 +744,9 @@ export const PublishPage = () => {
     );
   };
 
-  const buildFolderPlaylistInput = async (preparedSongs: PreparedSongPublish[]) => {
+  const buildFolderPlaylistInput = async (
+    preparedSongs: PreparedSongPublish[]
+  ) => {
     if (folderPlaylistMode === 'none') {
       return null;
     }
@@ -724,7 +765,9 @@ export const PublishPage = () => {
         publishedDate: folderPlaylistPublishedDate,
         songs: publishedSongs,
         coverFile: folderPlaylistCoverFile,
-        coverCrop: folderPlaylistCoverFile ? folderPlaylistCoverCrop : undefined,
+        coverCrop: folderPlaylistCoverFile
+          ? folderPlaylistCoverCrop
+          : undefined,
       });
     }
 
@@ -759,7 +802,8 @@ export const PublishPage = () => {
       title: nextTitle,
       description: nextDescription,
       publishedDate:
-        folderPlaylistPublishedDate.trim() || new Date().toISOString().slice(0, 10),
+        folderPlaylistPublishedDate.trim() ||
+        new Date().toISOString().slice(0, 10),
       songs: mergedSongs,
       coverFile: folderPlaylistCoverFile,
       coverCrop: folderPlaylistCoverFile ? folderPlaylistCoverCrop : undefined,
@@ -820,8 +864,8 @@ export const PublishPage = () => {
       );
       await publishSongAudioBatch(preparedSongs);
 
-      const songsWithThumbnails = preparedSongs.filter(
-        (song) => Boolean(song.thumbnailResource)
+      const songsWithThumbnails = preparedSongs.filter((song) =>
+        Boolean(song.thumbnailResource)
       );
       if (songsWithThumbnails.length) {
         setFolderPublishPhase(
@@ -970,7 +1014,9 @@ export const PublishPage = () => {
                     label="Publication date"
                     type="date"
                     value={songPublishedDate}
-                    onChange={(event) => setSongPublishedDate(event.target.value)}
+                    onChange={(event) =>
+                      setSongPublishedDate(event.target.value)
+                    }
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                   <TextField
@@ -981,7 +1027,9 @@ export const PublishPage = () => {
                     onChange={(event) => setSongNotes(event.target.value)}
                   />
                   <Button component="label" variant="outlined">
-                    {audioFile ? `Audio: ${audioFile.name}` : 'Choose audio file'}
+                    {audioFile
+                      ? `Audio: ${audioFile.name}`
+                      : 'Choose audio file'}
                     <input
                       hidden
                       type="file"
@@ -1069,7 +1117,9 @@ export const PublishPage = () => {
                     multiline
                     minRows={3}
                     value={playlistDescription}
-                    onChange={(event) => setPlaylistDescription(event.target.value)}
+                    onChange={(event) =>
+                      setPlaylistDescription(event.target.value)
+                    }
                   />
                   <TextField
                     label="Publication date"
@@ -1196,7 +1246,9 @@ export const PublishPage = () => {
                     onClick={handlePublishPlaylist}
                     disabled={!playlistPublishReady || isPublishingPlaylist}
                   >
-                    {isPublishingPlaylist ? 'Publishing...' : 'Publish playlist'}
+                    {isPublishingPlaylist
+                      ? 'Publishing...'
+                      : 'Publish playlist'}
                   </Button>
                 </Stack>
               </Box>
@@ -1231,10 +1283,14 @@ export const PublishPage = () => {
             state={folderSelectState}
           >
             <Alert severity="info">
-              Folder upload is available in this `Folder Batch` view, not in `Single
-              File`.
+              Folder upload is available in this `Folder Batch` view, not in
+              `Single File`.
             </Alert>
-            <Button component="label" variant="contained" sx={{ alignSelf: 'flex-start' }}>
+            <Button
+              component="label"
+              variant="contained"
+              sx={{ alignSelf: 'flex-start' }}
+            >
               Select folder
               <input
                 {...directoryInputAttributes}
@@ -1266,15 +1322,27 @@ export const PublishPage = () => {
             state={folderReviewState}
           >
             {folderSongs.length ? (
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} useFlexGap>
-                <Chip label={`${folderSongs.length} audio files`} variant="outlined" />
+              <Stack
+                direction={{ xs: 'column', md: 'row' }}
+                spacing={1}
+                useFlexGap
+              >
+                <Chip
+                  label={`${folderSongs.length} audio files`}
+                  variant="outlined"
+                />
                 <Chip
                   label={`${folderSongsWithMetadata} metadata matches`}
                   variant="outlined"
                 />
-                <Chip label={`${folderSongsWithCover} covers matched`} variant="outlined" />
                 <Chip
-                  color={folderSongsMissingRequired === 0 ? 'success' : 'warning'}
+                  label={`${folderSongsWithCover} covers matched`}
+                  variant="outlined"
+                />
+                <Chip
+                  color={
+                    folderSongsMissingRequired === 0 ? 'success' : 'warning'
+                  }
                   label={
                     folderSongsMissingRequired === 0
                       ? 'All required fields complete'
@@ -1284,7 +1352,8 @@ export const PublishPage = () => {
               </Stack>
             ) : (
               <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                Import a folder first to see the detected files and metadata matches.
+                Import a folder first to see the detected files and metadata
+                matches.
               </Typography>
             )}
           </StepPanel>
@@ -1332,7 +1401,9 @@ export const PublishPage = () => {
                   fullWidth
                   label="Language"
                   value={folderBulkLanguage}
-                  onChange={(event) => setFolderBulkLanguage(event.target.value)}
+                  onChange={(event) =>
+                    setFolderBulkLanguage(event.target.value)
+                  }
                 />
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
@@ -1359,12 +1430,18 @@ export const PublishPage = () => {
                   label="Publication date"
                   type="date"
                   value={folderBulkPublishedDate}
-                  onChange={(event) => setFolderBulkPublishedDate(event.target.value)}
+                  onChange={(event) =>
+                    setFolderBulkPublishedDate(event.target.value)
+                  }
                   slotProps={{ inputLabel: { shrink: true } }}
                 />
               </Grid>
             </Grid>
-            <Button component="label" variant="outlined" sx={{ alignSelf: 'flex-start' }}>
+            <Button
+              component="label"
+              variant="outlined"
+              sx={{ alignSelf: 'flex-start' }}
+            >
               {folderBulkCoverFile
                 ? `Common cover: ${folderBulkCoverFile.name}`
                 : 'Choose common cover'}
@@ -1427,7 +1504,10 @@ export const PublishPage = () => {
                     <Typography variant="subtitle1">
                       {index + 1}. {song.relativePath}
                     </Typography>
-                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                    <Typography
+                      variant="body2"
+                      sx={{ color: 'text.secondary' }}
+                    >
                       {song.metadataSource
                         ? `Metadata: ${song.metadataSource}`
                         : 'Metadata: manual/default'}
@@ -1533,7 +1613,11 @@ export const PublishPage = () => {
                       />
                     </Grid>
                   </Grid>
-                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} useFlexGap>
+                  <Stack
+                    direction={{ xs: 'column', md: 'row' }}
+                    spacing={1}
+                    useFlexGap
+                  >
                     <Button component="label" variant="outlined">
                       {song.coverFile
                         ? `Cover: ${song.coverFile.name}`
@@ -1551,7 +1635,9 @@ export const PublishPage = () => {
                     </Button>
                     <Chip
                       color={
-                        song.title.trim() && song.artist.trim() ? 'success' : 'warning'
+                        song.title.trim() && song.artist.trim()
+                          ? 'success'
+                          : 'warning'
                       }
                       label={
                         song.title.trim() && song.artist.trim()
@@ -1592,11 +1678,16 @@ export const PublishPage = () => {
                 select
                 label="Existing playlist"
                 value={existingPlaylistIdentifier}
-                onChange={(event) => setExistingPlaylistIdentifier(event.target.value)}
+                onChange={(event) =>
+                  setExistingPlaylistIdentifier(event.target.value)
+                }
                 helperText="Only your published playlists are shown here."
               >
                 {ownPlaylists.map((playlist) => (
-                  <MenuItem key={playlist.identifier} value={playlist.identifier}>
+                  <MenuItem
+                    key={playlist.identifier}
+                    value={playlist.identifier}
+                  >
                     {playlist.title}
                   </MenuItem>
                 ))}
@@ -1607,7 +1698,9 @@ export const PublishPage = () => {
                 <TextField
                   label="Playlist title"
                   value={folderPlaylistTitle}
-                  onChange={(event) => setFolderPlaylistTitle(event.target.value)}
+                  onChange={(event) =>
+                    setFolderPlaylistTitle(event.target.value)
+                  }
                   helperText={
                     folderPlaylistMode === 'existing'
                       ? 'Leave blank to keep the current playlist title.'
@@ -1637,7 +1730,11 @@ export const PublishPage = () => {
                   }
                   slotProps={{ inputLabel: { shrink: true } }}
                 />
-                <Button component="label" variant="outlined" sx={{ alignSelf: 'flex-start' }}>
+                <Button
+                  component="label"
+                  variant="outlined"
+                  sx={{ alignSelf: 'flex-start' }}
+                >
                   {folderPlaylistCoverFile
                     ? `Playlist cover: ${folderPlaylistCoverFile.name}`
                     : 'Choose playlist cover'}
@@ -1646,7 +1743,9 @@ export const PublishPage = () => {
                     type="file"
                     accept="image/*"
                     onChange={(event) => {
-                      setFolderPlaylistCoverFile(event.target.files?.[0] || null);
+                      setFolderPlaylistCoverFile(
+                        event.target.files?.[0] || null
+                      );
                       setFolderPlaylistCoverCrop(defaultCrop());
                     }}
                   />
@@ -1686,9 +1785,18 @@ export const PublishPage = () => {
                   : `Playlist mode: ${folderPlaylistMode}`,
               ]}
             />
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} useFlexGap>
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1}
+              useFlexGap
+            >
               <Chip
-                color={folderSongCountReady === folderSongs.length && folderSongs.length > 0 ? 'success' : 'warning'}
+                color={
+                  folderSongCountReady === folderSongs.length &&
+                  folderSongs.length > 0
+                    ? 'success'
+                    : 'warning'
+                }
                 label={`${folderSongCountReady}/${folderSongs.length} songs ready`}
               />
               <Chip
@@ -1708,7 +1816,9 @@ export const PublishPage = () => {
               disabled={!folderPublishReady || isPublishingFolder}
               sx={{ alignSelf: 'flex-start' }}
             >
-              {isPublishingFolder ? 'Publishing folder...' : 'Publish folder batch'}
+              {isPublishingFolder
+                ? 'Publishing folder...'
+                : 'Publish folder batch'}
             </Button>
           </StepPanel>
 
@@ -1732,7 +1842,10 @@ export const PublishPage = () => {
                     <Typography variant="body2">
                       {status.filename || status.metadata.identifier}
                     </Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: 'text.secondary' }}
+                    >
                       {status.metadata.service} • {status.status.status} •{' '}
                       {status.status.percentLoaded || 0}%
                     </Typography>
