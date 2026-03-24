@@ -96,6 +96,37 @@ const uniqueByIdentifier = (items: QdnSearchResource[]) => {
   });
 };
 
+const loadPlaylistPayload = async (
+  publisher: string,
+  identifier: string,
+  timeoutMs = 12_000
+) => {
+  try {
+    await waitForQdnResourceReady({
+      name: publisher,
+      service: 'PLAYLIST',
+      identifier,
+      timeoutMs,
+    });
+
+    return await fetchQdnResource<RawPlaylistPayload>({
+      name: publisher,
+      service: 'PLAYLIST',
+      identifier,
+    });
+  } catch {
+    return null;
+  }
+};
+
+export const resolvePlaylistSongCount = async (
+  publisher: string,
+  identifier: string
+) => {
+  const payload = await loadPlaylistPayload(publisher, identifier);
+  return Array.isArray(payload?.songs) ? payload.songs.length : 0;
+};
+
 const mapPlaylistSongReference = async (
   song: RawPlaylistSong
 ): Promise<PlaylistSongReference | null> => {
@@ -162,7 +193,17 @@ export const fetchPlaylists = async (options?: {
     .map(mapPlaylistSummary)
     .filter((item): item is PlaylistSummary => Boolean(item));
 
-  return summaries;
+  const summariesWithCounts = await Promise.all(
+    summaries.map(async (summary) => ({
+      ...summary,
+      songCount: await resolvePlaylistSongCount(
+        summary.publisher,
+        summary.identifier
+      ),
+    }))
+  );
+
+  return summariesWithCounts;
 };
 
 export const fetchPlaylistsByPublisher = async (
@@ -198,23 +239,7 @@ export const fetchPlaylistDetail = async (
   const summary = resource ? mapPlaylistSummary(resource) : null;
   if (!summary) return null;
 
-  await waitForQdnResourceReady({
-    name: publisher,
-    service: 'PLAYLIST',
-    identifier,
-    timeoutMs: 30_000,
-  });
-
-  let payload: RawPlaylistPayload | null = null;
-  try {
-    payload = await fetchQdnResource<RawPlaylistPayload>({
-      name: publisher,
-      service: 'PLAYLIST',
-      identifier,
-    });
-  } catch {
-    payload = null;
-  }
+  const payload = await loadPlaylistPayload(publisher, identifier, 30_000);
 
   const rawSongs = Array.isArray(payload?.songs) ? payload.songs : [];
   const resolvedSongs = await Promise.all(

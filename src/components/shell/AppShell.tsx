@@ -6,7 +6,9 @@ import {
 } from '@mui/icons-material';
 import {
   AppBar,
+  Divider,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   Box,
@@ -24,14 +26,28 @@ import {
   Typography,
 } from '@mui/material';
 import { keyframes } from '@mui/system';
-import { showError, showSuccess, useGlobal, useQortBalance } from 'qapp-core';
-import { useState, type ChangeEvent, type MouseEvent, type ReactNode } from 'react';
+import {
+  sanitizedContent,
+  showError,
+  showSuccess,
+  useGlobal,
+  useQortBalance,
+} from 'qapp-core';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import { useIframe } from '../../hooks/useIframeListener';
 import { librarySyncStateAtom } from '../../state/library';
 import { queueLengthAtom } from '../../state/player';
 import { EnumTheme, themeAtom } from '../../state/global/system';
+import { fetchChangeLog, publishChangeLog } from '../../services/changeLog';
 import { LibrarySync } from './LibrarySync';
 import { FloatingMiniPlayer } from '../player/FloatingMiniPlayer';
 
@@ -49,6 +65,7 @@ const chatGroupId = 827;
 const chatJoinUri = `qortal://use-group/action-join/groupid-${chatGroupId}`;
 const podcastsAppUri = 'qortal://APP/Q-Podcasts';
 const supportRecipient = 'QTowvz1e89MP4FEFpHvEfZ4x8G3LwMpthz';
+const ownerAddress = 'QTowvz1e89MP4FEFpHvEfZ4x8G3LwMpthz';
 const supportFlow = keyframes`
   0% {
     background-position: 0% 50%;
@@ -70,11 +87,78 @@ interface AppShellProps {
 
 const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const location = useLocation();
-  const { value: qortBalance, getBalance, isLoading: isBalanceLoading } =
-    useQortBalance();
+  const { auth } = useGlobal();
+  const {
+    value: qortBalance,
+    getBalance,
+    isLoading: isBalanceLoading,
+  } = useQortBalance();
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportAmount, setSupportAmount] = useState('0');
   const [isSendingSupport, setIsSendingSupport] = useState(false);
+  const [changeLogOpen, setChangeLogOpen] = useState(false);
+  const [changeLogHtml, setChangeLogHtml] = useState('');
+  const [draftChangeLogHtml, setDraftChangeLogHtml] = useState('');
+  const [changeLogUpdatedAt, setChangeLogUpdatedAt] = useState<number | null>(
+    null
+  );
+  const [isChangeLogLoading, setIsChangeLogLoading] = useState(false);
+  const [isSavingChangeLog, setIsSavingChangeLog] = useState(false);
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const isOwner = auth?.address === ownerAddress;
+
+  useEffect(() => {
+    if (!changeLogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const load = async () => {
+      setIsChangeLogLoading(true);
+
+      try {
+        const entry = await fetchChangeLog();
+        if (cancelled) {
+          return;
+        }
+
+        const nextHtml = entry?.html || '';
+        setChangeLogHtml(nextHtml);
+        setDraftChangeLogHtml(nextHtml);
+        setChangeLogUpdatedAt(entry?.updatedAt || null);
+      } catch (error) {
+        if (!cancelled) {
+          showError(
+            error instanceof Error && error.message
+              ? error.message
+              : 'Failed to load the change log.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setIsChangeLogLoading(false);
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [changeLogOpen]);
+
+  useEffect(() => {
+    if (!changeLogOpen || !isOwner || !editorRef.current) {
+      return;
+    }
+
+    if (editorRef.current.innerHTML !== draftChangeLogHtml) {
+      editorRef.current.innerHTML = draftChangeLogHtml;
+    }
+  }, [changeLogOpen, draftChangeLogHtml, isOwner]);
+
   const handleJoinChat = (event: MouseEvent<HTMLAnchorElement>) => {
     if (typeof qortalRequest !== 'function') {
       return;
@@ -118,6 +202,52 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const handleSupportAmountChange = (event: ChangeEvent<HTMLInputElement>) => {
     setSupportAmount(event.target.value);
   };
+  const handleOpenChangeLog = () => {
+    setChangeLogOpen(true);
+  };
+  const handleCloseChangeLog = () => {
+    if (isSavingChangeLog) {
+      return;
+    }
+
+    setChangeLogOpen(false);
+  };
+  const handleChangeLogInput = () => {
+    setDraftChangeLogHtml(editorRef.current?.innerHTML || '');
+  };
+  const handleFormatChangeLog = (
+    command: 'bold' | 'italic' | 'insertUnorderedList' | 'insertOrderedList'
+  ) => {
+    editorRef.current?.focus();
+    document.execCommand(command);
+    setDraftChangeLogHtml(editorRef.current?.innerHTML || '');
+  };
+  const handleSaveChangeLog = async () => {
+    if (!isOwner || !auth?.name) {
+      showError('Log in with the owner account to update the change log.');
+      return;
+    }
+
+    try {
+      setIsSavingChangeLog(true);
+      await publishChangeLog({
+        publisher: auth.name,
+        html: draftChangeLogHtml,
+      });
+      const savedAt = Date.now();
+      setChangeLogHtml(draftChangeLogHtml);
+      setChangeLogUpdatedAt(savedAt);
+      showSuccess('Change log updated successfully.');
+    } catch (error) {
+      showError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to save the change log.'
+      );
+    } finally {
+      setIsSavingChangeLog(false);
+    }
+  };
   const handleSendSupport = async () => {
     const amount = Number(supportAmount);
 
@@ -146,7 +276,9 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
       });
       setSupportOpen(false);
       setSupportAmount('0');
-      showSuccess('Thank you for supporting Q-Music. Transfer sent successfully. 💚');
+      showSuccess(
+        'Thank you for supporting Q-Music. Transfer sent successfully. 💚'
+      );
       void getBalance().catch(() => undefined);
     } catch (error) {
       const message =
@@ -227,13 +359,6 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             <Button
               variant="outlined"
               fullWidth
-              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
-            >
-              App version 2.0
-            </Button>
-            <Button
-              variant="outlined"
-              fullWidth
               component="a"
               href={podcastsAppUri}
               onClick={handleOpenPodcasts}
@@ -268,6 +393,14 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
               }}
             >
               Support Project
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={handleOpenChangeLog}
+              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
+            >
+              v. 2.0 - view change log
             </Button>
           </Stack>
         </Box>
@@ -319,6 +452,132 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
             </Typography>
           </Stack>
         </DialogContent>
+      </Dialog>
+      <Dialog
+        open={changeLogOpen}
+        onClose={handleCloseChangeLog}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>Q-Music Change Log</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.25} sx={{ pt: 1 }}>
+            {changeLogUpdatedAt ? (
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                Last updated: {new Date(changeLogUpdatedAt).toLocaleString()}
+              </Typography>
+            ) : null}
+            <Box
+              sx={{
+                minHeight: 180,
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'divider',
+                p: 2,
+                backgroundColor: 'var(--qm-surface-soft)',
+              }}
+            >
+              {isChangeLogLoading ? (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Loading change log...
+                </Typography>
+              ) : changeLogHtml ? (
+                <Box
+                  sx={{
+                    '& p': { mt: 0, mb: 1.25 },
+                    '& ul, & ol': { pl: 3, my: 1.25 },
+                    '& li': { mb: 0.5 },
+                    '& strong': { fontWeight: 700 },
+                    '& em': { fontStyle: 'italic' },
+                  }}
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizedContent(changeLogHtml),
+                  }}
+                />
+              ) : (
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  No change log entries have been published yet.
+                </Typography>
+              )}
+            </Box>
+            {isOwner ? (
+              <>
+                <Divider />
+                <Typography variant="subtitle2">Edit change log</Typography>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleFormatChangeLog('bold')}
+                  >
+                    Bold
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleFormatChangeLog('italic')}
+                  >
+                    Italic
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleFormatChangeLog('insertUnorderedList')}
+                  >
+                    Bullet list
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleFormatChangeLog('insertOrderedList')}
+                  >
+                    Numbered list
+                  </Button>
+                </Stack>
+                <Box
+                  ref={editorRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onInput={handleChangeLogInput}
+                  sx={{
+                    minHeight: 220,
+                    borderRadius: 2,
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    p: 1.5,
+                    backgroundColor: 'background.paper',
+                    overflowY: 'auto',
+                    '&:focus': {
+                      outline: '2px solid rgba(58, 151, 255, 0.35)',
+                      outlineOffset: 1,
+                    },
+                    '& p': { mt: 0, mb: 1.25 },
+                    '& ul, & ol': { pl: 3, my: 1.25 },
+                    '& li': { mb: 0.5 },
+                  }}
+                />
+              </>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          {isOwner ? (
+            <Button
+              variant="contained"
+              onClick={handleSaveChangeLog}
+              disabled={isSavingChangeLog || isChangeLogLoading}
+            >
+              {isSavingChangeLog ? 'Saving...' : 'Save changes'}
+            </Button>
+          ) : null}
+          <Button variant="outlined" onClick={handleCloseChangeLog}>
+            Close
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

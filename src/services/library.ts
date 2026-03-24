@@ -3,6 +3,7 @@ import {
   searchQdnResources,
   waitForQdnResourceReady,
 } from './qdn';
+import { resolvePlaylistSongCount } from './playlists';
 import type { PlaylistSummary, SongSummary } from '../types/media';
 
 const LIBRARY_IDENTIFIER = 'enjoymusic_library_state';
@@ -66,6 +67,7 @@ const normalizePlaylist = (
     publisher: playlist.publisher,
     title: playlist.title,
     description: playlist.description,
+    publishedDate: playlist.publishedDate,
     created: playlist.created,
     updated: playlist.updated,
     status: playlist.status,
@@ -169,4 +171,26 @@ export const mergeLibraryStates = (
     ]).slice(0, 12),
     updatedAt: Math.max(remote.updatedAt || 0, localState.updatedAt || 0),
   };
+};
+
+export const refreshPlaylistCounters = async (
+  playlists: PlaylistSummary[]
+): Promise<PlaylistSummary[]> => {
+  return Promise.all(
+    playlists.map(async (playlist) => {
+      try {
+        const songCount = await resolvePlaylistSongCount(
+          playlist.publisher,
+          playlist.identifier
+        );
+
+        return {
+          ...playlist,
+          songCount,
+        };
+      } catch {
+        return playlist;
+      }
+    })
+  );
 };

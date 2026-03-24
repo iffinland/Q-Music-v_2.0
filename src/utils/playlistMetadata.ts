@@ -1,9 +1,21 @@
+export const formatPlaylistTrackCount = (
+  songCount?: number,
+  options?: { isLoading?: boolean }
+) => {
+  if (options?.isLoading) {
+    return 'Tracks loading...';
+  }
+
+  return `${songCount ?? 0} tracks`;
+};
+
 export const formatPlaylistCardMetadata = (params: {
   title: string;
   publisher: string;
   description?: string;
   publishedDate?: string;
   songCount?: number;
+  isTrackCountLoading?: boolean;
 }) => {
   const lines = [
     params.publishedDate?.trim()
@@ -12,7 +24,9 @@ export const formatPlaylistCardMetadata = (params: {
     `TITLE: ${params.title}`,
   ];
 
-  if (typeof params.songCount === 'number' && params.songCount > 0) {
+  if (params.isTrackCountLoading) {
+    lines.push('TRACKS: Loading...');
+  } else if (typeof params.songCount === 'number' && params.songCount > 0) {
     lines.push(`TRACKS: ${params.songCount}`);
   }
 

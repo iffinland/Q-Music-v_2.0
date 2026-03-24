@@ -5,20 +5,10 @@ import { useParams } from 'react-router-dom';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
 import { useMediaPublish } from '../hooks/useMediaPublish';
-import { resolveSongStreamUrl } from '../services/songs';
+import { loadExistingSongAudioFile } from '../services/songs';
 import { useSongDetail } from '../hooks/useSongDetail';
 import { emitMediaRefresh } from '../utils/mediaEvents';
 import { parseSongMetadata } from '../utils/songMetadata';
-
-const inferAudioExtension = (contentType?: string) => {
-  if (!contentType) return 'mp3';
-  if (contentType.includes('mpeg')) return 'mp3';
-  if (contentType.includes('wav')) return 'wav';
-  if (contentType.includes('ogg')) return 'ogg';
-  if (contentType.includes('flac')) return 'flac';
-  if (contentType.includes('aac')) return 'aac';
-  return 'audio';
-};
 
 export const EditSongPage = () => {
   const { auth } = useGlobal();
@@ -68,52 +58,22 @@ export const EditSongPage = () => {
     setIsSaving(true);
     setSaveError(null);
     setStatus(null);
-    setSavePhase('Preparing update...');
+    setSavePhase('Preparing your song update...');
 
     try {
       let fileToPublish = audioFile;
 
       if (!fileToPublish) {
-        setSavePhase('Preparing current QDN audio...');
-        const streamUrl = await resolveSongStreamUrl(
-          song.publisher,
-          song.identifier,
-          {
-            waitUntilReady: true,
-            onStatusChange: (resourceStatus, progress) => {
-              setSavePhase(
-                progress
-                  ? `Preparing current QDN audio (${progress}%)`
-                  : `Preparing current QDN audio: ${resourceStatus}`
-              );
-            },
-          }
-        );
-
-        if (!streamUrl) {
-          throw new Error(
-            'Existing audio could not be loaded. Select a replacement audio file to save changes.'
-          );
-        }
-
-        const response = await fetch(streamUrl);
-        if (!response.ok) {
-          throw new Error(
-            'Existing audio could not be re-used for this edit. Select a replacement audio file to save changes.'
-          );
-        }
-
-        const blob = await response.blob();
-        fileToPublish = new File(
-          [blob],
-          `${song.identifier}.${inferAudioExtension(blob.type)}`,
-          {
-            type: blob.type || 'audio/mpeg',
-          }
-        );
+        fileToPublish = await loadExistingSongAudioFile({
+          publisher: song.publisher,
+          identifier: song.identifier,
+          onStatusChange: setSavePhase,
+        });
+      } else {
+        setSavePhase('Using the selected replacement audio file...');
       }
 
-      setSavePhase('Publishing update to QDN...');
+      setSavePhase('Publishing your updated song to QDN...');
       const result = await publishSong({
         title: title.trim() || song.title,
         artist: artist.trim() || song.artist,

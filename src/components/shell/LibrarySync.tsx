@@ -12,6 +12,7 @@ import {
   getLibraryMetadata,
   loadRemoteLibrary,
   mergeLibraryStates,
+  refreshPlaylistCounters,
 } from '../../services/library';
 
 export const LibrarySync = () => {
@@ -72,14 +73,25 @@ export const LibrarySync = () => {
         if (cancelled) return;
 
         const merged = mergeLibraryStates(currentState, remoteState);
-        setFavoriteSongs(merged.favoriteSongs);
-        setFavoritePlaylists(merged.favoritePlaylists);
-        setRecentSongs(merged.recentSongs);
-        setLibraryHydratedFor(publisher);
-        latestSerializedRef.current = serializeLibrarySyncTrigger({
-          favoriteSongs: merged.favoriteSongs,
-          favoritePlaylists: merged.favoritePlaylists,
+        const refreshedFavoritePlaylists = await refreshPlaylistCounters(
+          merged.favoritePlaylists
+        );
+        if (cancelled) return;
+
+        const nextState = {
+          ...merged,
+          favoritePlaylists: refreshedFavoritePlaylists,
+        };
+        const nextSerialized = serializeLibrarySyncTrigger({
+          favoriteSongs: nextState.favoriteSongs,
+          favoritePlaylists: nextState.favoritePlaylists,
         });
+
+        setFavoriteSongs(nextState.favoriteSongs);
+        setFavoritePlaylists(nextState.favoritePlaylists);
+        setRecentSongs(nextState.recentSongs);
+        setLibraryHydratedFor(publisher);
+        latestSerializedRef.current = nextSerialized;
         setLibrarySyncState('idle');
       } catch {
         if (!cancelled) {

@@ -1,10 +1,15 @@
+import { useAtom } from 'jotai';
 import { Button, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
-import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
+import { librarySyncStateAtom } from '../state/library';
+import {
+  formatPlaylistCardMetadata,
+  formatPlaylistTrackCount,
+} from '../utils/playlistMetadata';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 
 const libraryHighlights = [
@@ -16,6 +21,8 @@ const libraryHighlights = [
 export const LibraryPage = () => {
   const { favoritePlaylists, favoriteSongs, recentSongs } = useLibrary();
   const { playTrack } = useMiniPlayer();
+  const [librarySyncState] = useAtom(librarySyncStateAtom);
+  const playlistCountsLoading = librarySyncState === 'loading';
 
   return (
     <Stack spacing={3}>
@@ -130,8 +137,14 @@ export const LibraryPage = () => {
                 description: playlist.description,
                 publishedDate: playlist.publishedDate,
                 songCount: playlist.songCount,
+                isTrackCountLoading: playlistCountsLoading,
               })}
-              meta={['PLAYLIST', `${playlist.songCount} tracks`]}
+              meta={[
+                'PLAYLIST',
+                formatPlaylistTrackCount(playlist.songCount, {
+                  isLoading: playlistCountsLoading,
+                }),
+              ]}
               action={
                 <Button
                   component={RouterLink}

@@ -23,6 +23,67 @@ const sleep = (ms: number) =>
     window.setTimeout(resolve, ms);
   });
 
+const inferAudioExtension = (contentType?: string) => {
+  if (!contentType) return 'mp3';
+  if (contentType.includes('mpeg')) return 'mp3';
+  if (contentType.includes('wav')) return 'wav';
+  if (contentType.includes('ogg')) return 'ogg';
+  if (contentType.includes('flac')) return 'flac';
+  if (contentType.includes('aac')) return 'aac';
+  return 'audio';
+};
+
+const inferAudioMimeType = (filename?: string, fallbackType?: string) => {
+  if (fallbackType?.startsWith('audio/')) {
+    return fallbackType;
+  }
+
+  const extension = filename?.split('.').pop()?.trim().toLowerCase();
+  switch (extension) {
+    case 'aac':
+      return 'audio/aac';
+    case 'flac':
+      return 'audio/flac';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'ogg':
+      return 'audio/ogg';
+    case 'wav':
+      return 'audio/wav';
+    case 'webm':
+      return 'audio/webm';
+    default:
+      return fallbackType || 'audio/mpeg';
+  }
+};
+
+const decodeBase64ToBytes = (value: string) => {
+  const normalized = value.includes(',') ? value.split(',').pop() || '' : value;
+  const binary = window.atob(normalized);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+};
+
+const resolveAudioFilename = (
+  identifier: string,
+  resourceFilename?: string,
+  mimeType?: string
+) => {
+  const normalizedFilename = resourceFilename?.trim();
+  if (normalizedFilename) {
+    return normalizedFilename;
+  }
+
+  return `${identifier}.${inferAudioExtension(mimeType)}`;
+};
+
 const primeResourceUrlResolution = async (
   service: 'AUDIO' | 'DOCUMENT',
   publisher: string,
@@ -263,6 +324,103 @@ export const resolveSongArtwork = async (
   identifier: string
 ): Promise<string | null> => {
   return getQdnResourceUrl('THUMBNAIL', publisher, identifier);
+};
+
+export const loadExistingSongAudioFile = async (params: {
+  publisher: string;
+  identifier: string;
+  onStatusChange?: (status: string) => void;
+}) => {
+  params.onStatusChange?.('Looking up the current QDN audio file...');
+
+  const properties = await getQdnResourceProperties({
+    name: params.publisher,
+    service: 'AUDIO',
+    identifier: params.identifier,
+  });
+  const resourceFilename =
+    (typeof properties?.filename === 'string' && properties.filename.trim()) ||
+    (typeof properties?.fileName === 'string' && properties.fileName.trim()) ||
+    (typeof properties?.name === 'string' && properties.name.trim()) ||
+    undefined;
+
+  if (typeof qortalRequest === 'function') {
+    for (const service of ['AUDIO', 'DOCUMENT'] as const) {
+      try {
+        params.onStatusChange?.(
+          service === 'AUDIO'
+            ? 'Reusing the current QDN audio file...'
+            : 'Retrying with the alternate QDN resource source...'
+        );
+
+        const result = await qortalRequest({
+          action: 'FETCH_QDN_RESOURCE',
+          service,
+          name: params.publisher,
+          identifier: params.identifier,
+          encoding: 'base64',
+        } as never);
+
+        if (typeof result !== 'string' || !result.trim()) {
+          continue;
+        }
+
+        const mimeType = inferAudioMimeType(resourceFilename);
+        return new File(
+          [decodeBase64ToBytes(result)],
+          resolveAudioFilename(params.identifier, resourceFilename, mimeType),
+          { type: mimeType }
+        );
+      } catch {
+        // Fall through to the next recovery path.
+      }
+    }
+  }
+
+  params.onStatusChange?.(
+    'Waiting for the current QDN audio file to become available...'
+  );
+  const streamUrl = await resolveSongStreamUrl(
+    params.publisher,
+    params.identifier,
+    {
+      waitUntilReady: true,
+      onStatusChange: (resourceStatus, progress) => {
+        params.onStatusChange?.(
+          progress
+            ? `Loading the current QDN audio file (${progress}%)...`
+            : `Loading the current QDN audio file: ${resourceStatus}...`
+        );
+      },
+    }
+  );
+
+  if (!streamUrl) {
+    throw new Error(
+      'The current audio file could not be loaded. Select a replacement audio file to save changes.'
+    );
+  }
+
+  params.onStatusChange?.(
+    'Downloading the current QDN audio file for reuse...'
+  );
+  const response = await fetch(streamUrl);
+  if (!response.ok) {
+    throw new Error(
+      'The current audio file could not be reused for this edit. Select a replacement audio file to save changes.'
+    );
+  }
+
+  const blob = await response.blob();
+  const mimeType = inferAudioMimeType(resourceFilename, blob.type);
+
+  return new File(
+    [blob],
+    resolveAudioFilename(params.identifier, resourceFilename, mimeType),
+    {
+      type: mimeType,
+    }
+  );
 };
 
 export const resolveSongStreamUrl = async (
