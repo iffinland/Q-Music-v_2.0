@@ -11,7 +11,13 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material';
-import { Fragment, useDeferredValue, useMemo, useState } from 'react';
+import {
+  Fragment,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { ArtworkThumb } from '../components/common/ArtworkThumb';
@@ -20,6 +26,7 @@ import { SectionCard } from '../components/common/SectionCard';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { useSongsFeed } from '../hooks/useSongsFeed';
+import { fetchAllSongs } from '../services/songs';
 import type { SongSummary } from '../types/media';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 
@@ -128,26 +135,68 @@ export const SongsPage = () => {
   const [selectedGenre, setSelectedGenre] = useState<string>('ALL');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('ALL');
   const [selectedPublisher, setSelectedPublisher] = useState<string>('ALL');
+  const [catalogSongs, setCatalogSongs] = useState<SongSummary[]>([]);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
   const { songs, isLoading, error } = useSongsFeed(limit);
   const { addRecentSong } = useLibrary();
   const { playQueue } = useMiniPlayer();
   const deferredQuery = useDeferredValue(query);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCatalog = async () => {
+      setIsCatalogLoading(true);
+
+      try {
+        const allSongs = await fetchAllSongs();
+        if (!cancelled) {
+          setCatalogSongs(allSongs);
+        }
+      } catch {
+        if (!cancelled) {
+          setCatalogSongs([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsCatalogLoading(false);
+        }
+      }
+    };
+
+    void loadCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const allAvailableSongs = catalogSongs.length ? catalogSongs : songs;
+  const isExtendedSearchActive =
+    Boolean(deferredQuery.trim()) ||
+    selectedGenre !== 'ALL' ||
+    selectedLanguage !== 'ALL' ||
+    selectedPublisher !== 'ALL';
+
   const alphabet = useMemo(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), []);
-  const genreOptions = useMemo(() => getUniqueValues(songs, 'genre'), [songs]);
+  const genreOptions = useMemo(
+    () => getUniqueValues(allAvailableSongs, 'genre'),
+    [allAvailableSongs]
+  );
   const languageOptions = useMemo(
-    () => getUniqueValues(songs, 'language'),
-    [songs]
+    () => getUniqueValues(allAvailableSongs, 'language'),
+    [allAvailableSongs]
   );
   const publisherOptions = useMemo(
-    () => getUniqueValues(songs, 'publisher'),
-    [songs]
+    () => getUniqueValues(allAvailableSongs, 'publisher'),
+    [allAvailableSongs]
   );
 
   const visibleSongs = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
     const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
-    const filtered = songs.filter((song) => {
+    const sourceSongs = isExtendedSearchActive ? allAvailableSongs : songs;
+    const filtered = sourceSongs.filter((song) => {
       const normalizedArtist = song.artist.trim().toUpperCase();
       const matchesLetter =
         artistLetter === 'ALL'
@@ -194,7 +243,9 @@ export const SongsPage = () => {
     });
   }, [
     artistLetter,
+    allAvailableSongs,
     deferredQuery,
+    isExtendedSearchActive,
     selectedGenre,
     selectedLanguage,
     selectedPublisher,
@@ -237,6 +288,11 @@ export const SongsPage = () => {
         description="In the future, there will also be the option to browse stories published through Ear-Bump here."
       />
       {error ? <Alert severity="warning">{error}</Alert> : null}
+      {isExtendedSearchActive && isCatalogLoading ? (
+        <Alert severity="info">
+          Searching the full song catalog. More results may appear shortly.
+        </Alert>
+      ) : null}
       <Stack
         direction={{ xs: 'column', md: 'row' }}
         spacing={2}
@@ -417,7 +473,7 @@ export const SongsPage = () => {
         alignItems={{ xs: 'stretch', sm: 'center' }}
       >
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Showing {visibleSongs.length} loaded songs
+          Showing {visibleSongs.length} of {allAvailableSongs.length} songs
           {artistLetter === 'ALL'
             ? '.'
             : ` for artists starting with "${artistLetter}".`}

@@ -15,6 +15,7 @@ const URL_RETRY_COUNT = 2;
 const URL_RETRY_DELAY_MS = 800;
 const STREAM_RESOLVE_TIMEOUT_MS = 45_000;
 const STATUS_POLL_INTERVAL_MS = 1_500;
+const SONG_FETCH_BATCH_SIZE = 100;
 
 const descriptionCache = new Map<string, Record<string, string>>();
 
@@ -260,7 +261,7 @@ const uniqueByIdentifier = (items: QdnSearchResource[]) => {
   });
 };
 
-export const fetchSongs = async (options?: {
+const fetchSongsPage = async (options?: {
   limit?: number;
   offset?: number;
   publisher?: string;
@@ -292,6 +293,37 @@ export const fetchSongs = async (options?: {
     })
     .map(mapSongResource)
     .filter((item): item is SongSummary => Boolean(item));
+};
+
+export const fetchSongs = fetchSongsPage;
+
+export const fetchAllSongs = async (options?: {
+  publisher?: string;
+}): Promise<SongSummary[]> => {
+  const allSongs: SongSummary[] = [];
+  let offset = 0;
+
+  while (true) {
+    const page = await fetchSongsPage({
+      limit: SONG_FETCH_BATCH_SIZE,
+      offset,
+      publisher: options?.publisher,
+    });
+
+    if (!page.length) {
+      break;
+    }
+
+    allSongs.push(...page);
+
+    if (page.length < SONG_FETCH_BATCH_SIZE) {
+      break;
+    }
+
+    offset += SONG_FETCH_BATCH_SIZE;
+  }
+
+  return allSongs;
 };
 
 export const fetchSongsByPublisher = async (
