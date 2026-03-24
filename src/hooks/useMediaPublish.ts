@@ -7,8 +7,9 @@ import {
 import { searchQdnResources } from '../services/qdn';
 import type { PlaylistSongReference, SongSummary } from '../types/media';
 
-type ResourceToPublish =
-  Parameters<ReturnType<typeof usePublish>['publishMultipleResources']>[0][number];
+type ResourceToPublish = Parameters<
+  ReturnType<typeof usePublish>['publishMultipleResources']
+>[0][number];
 
 export interface CoverCropSettings {
   zoom: number;
@@ -74,6 +75,8 @@ const MAX_COVER_FILE_SIZE = 12 * 1024 * 1024;
 const COVER_SIZE = 1200;
 const MIN_CROP_ZOOM = 1;
 const MAX_CROP_ZOOM = 2.5;
+const PUBLISH_VERIFICATION_WINDOW_MS = 45_000;
+const PUBLISH_VERIFICATION_POLL_MS = 2_000;
 
 const sanitizeTitleForIdentifier = (value: string) =>
   sanitizeText(value)
@@ -100,6 +103,7 @@ const verifyResourcePublished = async (params: {
   service: 'AUDIO' | 'PLAYLIST';
   publisher: string;
   identifier: string;
+  baselineTimestamp?: number | null;
 }) => {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const resources = await searchQdnResources({
@@ -117,11 +121,27 @@ const verifyResourcePublished = async (params: {
       exactMatchNames: true,
     });
 
-    const found = resources.some(
-      (resource) =>
-        resource.identifier === params.identifier &&
-        resource.name === params.publisher
-    );
+    const found = resources.some((resource) => {
+      if (
+        resource.identifier !== params.identifier ||
+        resource.name !== params.publisher
+      ) {
+        return false;
+      }
+
+      const resourceTimestamp =
+        typeof resource.updated === 'number'
+          ? resource.updated
+          : typeof resource.created === 'number'
+            ? resource.created
+            : 0;
+
+      if (params.baselineTimestamp == null) {
+        return true;
+      }
+
+      return resourceTimestamp > params.baselineTimestamp;
+    });
 
     if (found) {
       return true;
@@ -262,17 +282,97 @@ export const useMediaPublish = () => {
     publisher: string;
     identifier: string;
   }) => {
-    try {
-      const result = await publishMultipleResources(params.resources);
-      if (result instanceof Error) {
-        throw result;
+    const baselineResource = await searchQdnResources({
+      mode: 'ALL',
+      service: params.verifyService,
+      name: params.publisher,
+      identifier: params.identifier,
+      query: params.identifier,
+      limit: 1,
+      offset: 0,
+      reverse: true,
+      includeMetadata: false,
+      includeStatus: true,
+      excludeBlocked: true,
+      exactMatchNames: true,
+    });
+    const baselineTimestamp =
+      typeof baselineResource[0]?.updated === 'number'
+        ? baselineResource[0].updated
+        : typeof baselineResource[0]?.created === 'number'
+          ? baselineResource[0].created
+          : null;
+
+    const publishPromise = publishMultipleResources(params.resources)
+      .then((result) => {
+        if (result instanceof Error) {
+          throw result;
+        }
+
+        return result;
+      })
+      .catch((error) => {
+        throw error;
+      });
+
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt <= PUBLISH_VERIFICATION_WINDOW_MS) {
+      const outcome = await Promise.race([
+        publishPromise.then(
+          (result) => ({
+            type: 'result' as const,
+            result,
+          }),
+          (error) => ({
+            type: 'error' as const,
+            error,
+          })
+        ),
+        wait(PUBLISH_VERIFICATION_POLL_MS).then(() => ({
+          type: 'tick' as const,
+        })),
+      ]);
+
+      if (outcome.type === 'result') {
+        return outcome.result;
       }
-      return result;
+
+      if (outcome.type === 'error') {
+        const wasPublished = await verifyResourcePublished({
+          service: params.verifyService,
+          publisher: params.publisher,
+          identifier: params.identifier,
+          baselineTimestamp,
+        });
+
+        if (wasPublished) {
+          return [];
+        }
+
+        throw outcome.error;
+      }
+
+      const wasPublished = await verifyResourcePublished({
+        service: params.verifyService,
+        publisher: params.publisher,
+        identifier: params.identifier,
+        baselineTimestamp,
+      });
+
+      if (wasPublished) {
+        return [];
+      }
+    }
+
+    try {
+      return await publishPromise;
     } catch (error) {
       const wasPublished = await verifyResourcePublished({
         service: params.verifyService,
         publisher: params.publisher,
         identifier: params.identifier,
+        baselineTimestamp,
       });
 
       if (wasPublished) {

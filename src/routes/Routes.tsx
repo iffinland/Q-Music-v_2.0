@@ -4,6 +4,7 @@ import {
   Navigate,
   RouterProvider,
 } from 'react-router-dom';
+import { RouteRefreshNotice } from '../components/common/RouteRefreshNotice';
 
 interface CustomWindow extends Window {
   _qdnBase: string;
@@ -81,6 +82,7 @@ export function Routes() {
       {
         path: '/',
         element: withSuspense(<AppWrapper />),
+        errorElement: <RouteRefreshNotice />,
         children: [
           {
             index: true,
