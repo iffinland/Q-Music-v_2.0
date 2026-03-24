@@ -2,9 +2,9 @@ import { Box, Chip, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 interface SectionCardProps {
-  kicker?: string;
-  title: string;
-  body: string;
+  kicker?: ReactNode;
+  title: ReactNode;
+  body: ReactNode;
   meta?: string[];
   action?: ReactNode;
   media?: ReactNode;

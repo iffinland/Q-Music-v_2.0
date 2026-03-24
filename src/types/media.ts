@@ -17,8 +17,12 @@ export interface SongSummary {
   title: string;
   artist: string;
   album?: string;
-  description?: string;
+  genre?: string;
+  mood?: string;
+  language?: string;
+  notes?: string;
   publishedDate?: string;
+  description?: string;
   created?: number;
   updated?: number;
   status?: string;

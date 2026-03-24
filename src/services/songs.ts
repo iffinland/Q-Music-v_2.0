@@ -183,6 +183,10 @@ const parseDescriptionMap = (description: unknown, cacheKey?: string) => {
         key !== 'title' &&
         key !== 'author' &&
         key !== 'album' &&
+        key !== 'genre' &&
+        key !== 'mood' &&
+        key !== 'language' &&
+        key !== 'notes' &&
         key !== 'publishedDate'
       )
         return;
@@ -226,6 +230,10 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
       buildTitleFromIdentifier(identifier, SONG_PREFIX),
     artist: parsedDescription.author || publisher,
     album: parsedDescription.album,
+    genre: parsedDescription.genre,
+    mood: parsedDescription.mood,
+    language: parsedDescription.language,
+    notes: parsedDescription.notes,
     description:
       typeof resource.metadata?.description === 'string'
         ? resource.metadata.description
