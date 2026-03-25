@@ -422,6 +422,7 @@ export const SongsPage = () => {
                       title: track.title,
                       publisher: track.publisher,
                       description: track.description,
+                      notesMaxLength: 80,
                     }),
                     highlightedTerms
                   )}

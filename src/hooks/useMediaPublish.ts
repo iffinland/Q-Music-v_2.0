@@ -6,6 +6,7 @@ import {
 } from 'qapp-core';
 import { searchQdnResources } from '../services/qdn';
 import type { PlaylistSongReference, SongSummary } from '../types/media';
+import { encodeSongMetadataValue } from '../utils/songMetadata';
 
 type ResourceToPublish = Parameters<
   ReturnType<typeof usePublish>['publishMultipleResources']
@@ -251,7 +252,9 @@ const buildSongDescription = (
     ['publishedDate', sanitizeText(input.publishedDate || '')],
   ].filter(([, value]) => value.length > 0);
 
-  return entries.map(([key, value]) => `${key}=${value}`).join(';');
+  return entries
+    .map(([key, value]) => `${key}=${encodeSongMetadataValue(value)}`)
+    .join(';');
 };
 
 export const mapSongToPlaylistReference = (

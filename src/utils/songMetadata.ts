@@ -20,6 +20,25 @@ const LABELS: Record<string, string> = {
   publishedDate: 'PUBLISHED DATE',
 };
 
+const decodeMetadataValue = (value: string) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+export const encodeSongMetadataValue = (value: string) =>
+  encodeURIComponent(value.trim().replace(/\s+/g, ' '));
+
+const truncateText = (value: string, maxLength?: number) => {
+  if (!maxLength || value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
+};
+
 export interface ParsedSongMetadata {
   title?: string;
   author?: string;
@@ -44,7 +63,7 @@ export const parseSongMetadata = (description?: string): ParsedSongMetadata => {
     }
 
     const key = rawKey.trim().toLowerCase();
-    const value = rawValueParts.join('=').trim();
+    const value = decodeMetadataValue(rawValueParts.join('=').trim());
     if (!value || !(key in LABELS)) {
       return;
     }
@@ -59,6 +78,7 @@ export const formatSongCardMetadata = (params: {
   title: string;
   publisher: string;
   description?: string;
+  notesMaxLength?: number;
 }) => {
   const parsed = parseSongMetadata(params.description);
   const publishedLine = parsed.publishedDate
@@ -72,7 +92,11 @@ export const formatSongCardMetadata = (params: {
       return;
     }
 
-    lines.push(`${LABELS[key]}: ${value}`);
+    lines.push(
+      `${LABELS[key]}: ${
+        key === 'notes' ? truncateText(value, params.notesMaxLength) : value
+      }`
+    );
   });
 
   return lines.join('\n');

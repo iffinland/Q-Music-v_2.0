@@ -43,6 +43,7 @@ export const LibraryPage = () => {
                 title: song.title,
                 publisher: song.publisher,
                 description: song.description,
+                notesMaxLength: 80,
               })}
               meta={['RECENT', song.publisher]}
               action={
@@ -89,6 +90,7 @@ export const LibraryPage = () => {
                 title: song.title,
                 publisher: song.publisher,
                 description: song.description,
+                notesMaxLength: 80,
               })}
               meta={['AUDIO', song.publisher]}
               action={

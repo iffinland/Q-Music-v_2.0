@@ -68,6 +68,7 @@ export const HomePage = () => {
                     title: track.title,
                     publisher: track.publisher,
                     description: track.description,
+                    notesMaxLength: 80,
                   })}
                   meta={['AUDIO', track.publisher]}
                   action={

@@ -106,6 +106,7 @@ export const MyMusicPage = () => {
                         title: song.title,
                         publisher: song.publisher,
                         description: song.description,
+                        notesMaxLength: 80,
                       })}
                       meta={['AUDIO', 'Owner item']}
                       action={

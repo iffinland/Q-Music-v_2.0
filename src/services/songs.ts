@@ -9,6 +9,7 @@ import {
 } from './qdn';
 import type { QdnSearchResource, SongSummary } from '../types/media';
 import { buildTitleFromIdentifier } from '../utils/mediaTitles';
+import { parseSongMetadata } from '../utils/songMetadata';
 
 const SONG_PREFIX = 'enjoymusic_song_';
 const URL_RETRY_COUNT = 2;
@@ -174,26 +175,10 @@ const parseDescriptionMap = (description: unknown, cacheKey?: string) => {
     return descriptionCache.get(cacheKey) as Record<string, string>;
   }
 
-  const parsed: Record<string, string> = {};
-  if (typeof description === 'string') {
-    description.split(';').forEach((pair) => {
-      const [rawKey, rawValue] = pair.split('=');
-      if (!rawKey || !rawValue) return;
-      const key = rawKey.trim();
-      if (
-        key !== 'title' &&
-        key !== 'author' &&
-        key !== 'album' &&
-        key !== 'genre' &&
-        key !== 'mood' &&
-        key !== 'language' &&
-        key !== 'notes' &&
-        key !== 'publishedDate'
-      )
-        return;
-      parsed[key] = rawValue.trim();
-    });
-  }
+  const parsed =
+    typeof description === 'string'
+      ? (parseSongMetadata(description) as Record<string, string>)
+      : {};
 
   if (cacheKey) {
     descriptionCache.set(cacheKey, parsed);

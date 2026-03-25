@@ -434,7 +434,7 @@ export const PublishPage = () => {
     null
   );
   const [folderPlaylistMode, setFolderPlaylistMode] =
-    useState<PlaylistMode>('new');
+    useState<PlaylistMode>('none');
   const [folderPlaylistTitle, setFolderPlaylistTitle] = useState('');
   const [folderPlaylistDescription, setFolderPlaylistDescription] =
     useState('');
@@ -1263,7 +1263,7 @@ export const PublishPage = () => {
               label={
                 folderPublishReady
                   ? 'Folder batch ready'
-                  : 'Folder batch needs valid song rows and playlist settings'
+                  : 'Folder batch needs valid song rows'
               }
             />
             <Chip
@@ -1658,7 +1658,7 @@ export const PublishPage = () => {
           <StepPanel
             step={5}
             title="Playlist Setup"
-            description="Choose whether the imported folder becomes a new playlist, updates an existing playlist, or skips playlist publishing."
+            description="Playlist creation is optional. Choose whether the imported folder becomes a new playlist, updates an existing playlist, or skips playlist publishing."
             state={folderPlaylistState}
           >
             <TextField
@@ -1668,11 +1668,18 @@ export const PublishPage = () => {
               onChange={(event) =>
                 setFolderPlaylistMode(event.target.value as PlaylistMode)
               }
+              helperText="Optional. You can publish the imported songs without creating or updating a playlist."
             >
               <MenuItem value="new">Create new playlist</MenuItem>
               <MenuItem value="existing">Add to existing playlist</MenuItem>
               <MenuItem value="none">Do not publish playlist</MenuItem>
             </TextField>
+            {folderPlaylistMode === 'none' ? (
+              <Alert severity="info">
+                The imported songs will be published without creating or
+                updating a playlist.
+              </Alert>
+            ) : null}
             {folderPlaylistMode === 'existing' ? (
               <TextField
                 select

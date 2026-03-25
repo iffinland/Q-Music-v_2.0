@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ImageLightbox } from '../common/ImageLightbox';
 import { resolveSongStreamUrl } from '../../services/songs';
 import {
@@ -76,6 +77,10 @@ export const FloatingMiniPlayer = () => {
   const currentTrackKey = currentTrack?.key;
   const currentTrackIdentifier = currentTrack?.identifier;
   const currentTrackPublisher = currentTrack?.publisher;
+
+  const stopFloatingDrag = useCallback(() => {
+    dragStateRef.current = null;
+  }, []);
 
   const currentIndex = useMemo(() => {
     if (!currentTrack) return -1;
@@ -263,6 +268,77 @@ export const FloatingMiniPlayer = () => {
     return () => window.removeEventListener('resize', onResize);
   }, [clampFloatingPosition, isFloating, setFloatingPosition]);
 
+  useEffect(() => {
+    if (!isFloating) {
+      stopFloatingDrag();
+    }
+  }, [isFloating, stopFloatingDrag]);
+
+  useEffect(() => {
+    if (!isFloating) return;
+
+    const onWindowPointerMove = (event: PointerEvent) => {
+      const dragState = dragStateRef.current;
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+      const nextPosition = clampFloatingPosition(
+        dragState.x + (event.clientX - dragState.startX),
+        dragState.y + (event.clientY - dragState.startY)
+      );
+      setFloatingPosition(nextPosition);
+    };
+
+    const onWindowPointerUp = (event: PointerEvent) => {
+      if (dragStateRef.current?.pointerId === event.pointerId) {
+        stopFloatingDrag();
+      }
+    };
+
+    window.addEventListener('pointermove', onWindowPointerMove);
+    window.addEventListener('pointerup', onWindowPointerUp);
+    window.addEventListener('pointercancel', onWindowPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', onWindowPointerMove);
+      window.removeEventListener('pointerup', onWindowPointerUp);
+      window.removeEventListener('pointercancel', onWindowPointerUp);
+    };
+  }, [
+    clampFloatingPosition,
+    isFloating,
+    setFloatingPosition,
+    stopFloatingDrag,
+  ]);
+
+  const handleDragStart = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!isFloating) return;
+
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          'button, a, input, textarea, select, [role="button"], [data-no-drag]'
+        )
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+
+      dragStateRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        x: floatingPosition.x,
+        y: floatingPosition.y,
+      };
+    },
+    [floatingPosition.x, floatingPosition.y, isFloating]
+  );
+
   const handleClosePlayer = useCallback(() => {
     const audio = audioRef.current;
     if (audio) {
@@ -302,21 +378,12 @@ export const FloatingMiniPlayer = () => {
 
   return (
     <Box
-      onPointerMove={(event) => {
-        const dragState = dragStateRef.current;
-        if (!dragState || dragState.pointerId !== event.pointerId) return;
-
-        const nextPosition = clampFloatingPosition(
-          dragState.x + (event.clientX - dragState.startX),
-          dragState.y + (event.clientY - dragState.startY)
-        );
-        setFloatingPosition(nextPosition);
-      }}
       onPointerUp={(event) => {
         if (dragStateRef.current?.pointerId === event.pointerId) {
-          dragStateRef.current = null;
+          stopFloatingDrag();
         }
       }}
+      onPointerCancel={stopFloatingDrag}
       sx={{
         position: 'fixed',
         left: isFloating ? floatingPosition.x : { xs: 12, md: 28 },
@@ -334,6 +401,7 @@ export const FloatingMiniPlayer = () => {
         backdropFilter: 'blur(22px)',
         background: 'var(--qm-panel-bg)',
         boxShadow: 'var(--qm-shadow-strong)',
+        userSelect: dragStateRef.current ? 'none' : 'auto',
       }}
     >
       {playerError ? (
@@ -350,17 +418,13 @@ export const FloatingMiniPlayer = () => {
           direction="row"
           spacing={1.25}
           alignItems="center"
-          onPointerDown={(event) => {
-            if (!isFloating) return;
-            dragStateRef.current = {
-              pointerId: event.pointerId,
-              startX: event.clientX,
-              startY: event.clientY,
-              x: floatingPosition.x,
-              y: floatingPosition.y,
-            };
+          onPointerDown={handleDragStart}
+          sx={{
+            cursor: isFloating ? 'grab' : 'default',
+            touchAction: 'none',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
           }}
-          sx={{ cursor: isFloating ? 'grab' : 'default', touchAction: 'none' }}
         >
           {artwork ? (
             <ImageLightbox src={artwork} alt={currentTrack.title}>
@@ -369,6 +433,7 @@ export const FloatingMiniPlayer = () => {
                   component="img"
                   src={artwork}
                   alt={currentTrack.title}
+                  data-no-drag
                   onClick={(event) => {
                     event.stopPropagation();
                     open();
