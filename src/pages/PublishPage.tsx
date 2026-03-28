@@ -39,6 +39,18 @@ import {
   parseFolderSelection,
   type FolderSongImportDraft,
 } from '../utils/publishFolder';
+import {
+  AUDIO_INPUT_ACCEPT,
+  AUDIO_LIMIT_TEXT,
+  COVER_LIMIT_TEXT,
+  COVER_PROCESSING_TEXT,
+  FOLDER_AUDIO_EXTENSIONS_TEXT,
+  FOLDER_IMAGE_EXTENSIONS_TEXT,
+  FOLDER_REQUIRED_TEXT,
+  IMAGE_INPUT_ACCEPT,
+  NEW_PLAYLIST_LIMIT_TEXT,
+  PLAYLIST_LIMIT_TEXT,
+} from '../utils/publishLimits';
 
 const directoryInputAttributes = {
   webkitdirectory: '',
@@ -973,6 +985,10 @@ export const PublishPage = () => {
               >
                 <Stack spacing={2}>
                   <Typography variant="h4">Publish Song</Typography>
+                  <Alert severity="info">
+                    {AUDIO_LIMIT_TEXT} Title and artist are required to publish
+                    a song.
+                  </Alert>
                   <TextField
                     label="Title"
                     value={songTitle}
@@ -1033,12 +1049,15 @@ export const PublishPage = () => {
                     <input
                       hidden
                       type="file"
-                      accept="audio/*"
+                      accept={AUDIO_INPUT_ACCEPT}
                       onChange={(event) =>
                         setAudioFile(event.target.files?.[0] || null)
                       }
                     />
                   </Button>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {AUDIO_LIMIT_TEXT}
+                  </Typography>
                   <Button component="label" variant="outlined">
                     {songCoverFile
                       ? `Cover: ${songCoverFile.name}`
@@ -1046,13 +1065,16 @@ export const PublishPage = () => {
                     <input
                       hidden
                       type="file"
-                      accept="image/*"
+                      accept={IMAGE_INPUT_ACCEPT}
                       onChange={(event) => {
                         setSongCoverFile(event.target.files?.[0] || null);
                         setSongCoverCrop(defaultCrop());
                       }}
                     />
                   </Button>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+                  </Typography>
                   {songCoverPreview ? (
                     <Stack spacing={1.5}>
                       <CropPreview
@@ -1107,6 +1129,9 @@ export const PublishPage = () => {
               >
                 <Stack spacing={2}>
                   <Typography variant="h4">Publish Playlist</Typography>
+                  <Alert severity="info">
+                    {NEW_PLAYLIST_LIMIT_TEXT}
+                  </Alert>
                   <TextField
                     label="Playlist title"
                     value={playlistTitle}
@@ -1137,13 +1162,16 @@ export const PublishPage = () => {
                     <input
                       hidden
                       type="file"
-                      accept="image/*"
+                      accept={IMAGE_INPUT_ACCEPT}
                       onChange={(event) => {
                         setPlaylistCoverFile(event.target.files?.[0] || null);
                         setPlaylistCoverCrop(defaultCrop());
                       }}
                     />
                   </Button>
+                  <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                    {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+                  </Typography>
                   {playlistCoverPreview ? (
                     <Stack spacing={1.5}>
                       <CropPreview
@@ -1234,7 +1262,7 @@ export const PublishPage = () => {
                     body={
                       playlistPublishReady
                         ? 'Title, description and track selection are ready.'
-                        : 'Playlist publishing needs a title, a short description and at least one selected song.'
+                        : PLAYLIST_LIMIT_TEXT
                     }
                     meta={[
                       `${selectedSongs.length} selected`,
@@ -1285,6 +1313,9 @@ export const PublishPage = () => {
             <Alert severity="info">
               Folder upload is available in this `Folder Batch` view, not in
               `Single File`.
+            </Alert>
+            <Alert severity="info">
+              {FOLDER_AUDIO_EXTENSIONS_TEXT} {FOLDER_IMAGE_EXTENSIONS_TEXT}
             </Alert>
             <Button
               component="label"
@@ -1448,12 +1479,15 @@ export const PublishPage = () => {
               <input
                 hidden
                 type="file"
-                accept="image/*"
+                accept={IMAGE_INPUT_ACCEPT}
                 onChange={(event) =>
                   setFolderBulkCoverFile(event.target.files?.[0] || null)
                 }
               />
             </Button>
+            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+              {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+            </Typography>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
               <Button
                 variant="outlined"
@@ -1478,6 +1512,7 @@ export const PublishPage = () => {
             description="Review every imported row. Only audio file, title and artist are required. Album is now supported here as song metadata."
             state={folderTracksState}
           >
+            <Alert severity="info">{FOLDER_REQUIRED_TEXT}</Alert>
             <TextField
               label="Filter imported songs"
               value={folderQuery}
@@ -1625,7 +1660,7 @@ export const PublishPage = () => {
                       <input
                         hidden
                         type="file"
-                        accept="image/*"
+                        accept={IMAGE_INPUT_ACCEPT}
                         onChange={(event) =>
                           updateFolderSong(song.id, {
                             coverFile: event.target.files?.[0] || null,
@@ -1633,6 +1668,12 @@ export const PublishPage = () => {
                         }
                       />
                     </Button>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: 'text.secondary', alignSelf: 'center' }}
+                    >
+                      {COVER_LIMIT_TEXT}
+                    </Typography>
                     <Chip
                       color={
                         song.title.trim() && song.artist.trim()
@@ -1661,6 +1702,10 @@ export const PublishPage = () => {
             description="Playlist creation is optional. Choose whether the imported folder becomes a new playlist, updates an existing playlist, or skips playlist publishing."
             state={folderPlaylistState}
           >
+            <Alert severity="info">
+              Existing playlist updates are limited to your own published
+              playlists. New playlists require a title and short description.
+            </Alert>
             <TextField
               select
               label="Playlist action"
@@ -1748,7 +1793,7 @@ export const PublishPage = () => {
                   <input
                     hidden
                     type="file"
-                    accept="image/*"
+                    accept={IMAGE_INPUT_ACCEPT}
                     onChange={(event) => {
                       setFolderPlaylistCoverFile(
                         event.target.files?.[0] || null
@@ -1757,6 +1802,12 @@ export const PublishPage = () => {
                     }}
                   />
                 </Button>
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+                </Typography>
                 {folderPlaylistCoverPreview ? (
                   <Stack spacing={1.5}>
                     <CropPreview

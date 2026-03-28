@@ -1,3 +1,8 @@
+import {
+  FOLDER_AUDIO_EXTENSIONS,
+  FOLDER_IMAGE_EXTENSIONS,
+} from './publishLimits';
+
 export interface ImportedSongMetadata {
   file?: string;
   title?: string;
@@ -33,27 +38,9 @@ export interface FolderImportResult {
   warnings: string[];
 }
 
-const AUDIO_EXTENSIONS = new Set([
-  'mp3',
-  'wav',
-  'ogg',
-  'flac',
-  'aac',
-  'm4a',
-  'opus',
-  'aiff',
-  'alac',
-  'wma',
-]);
+const AUDIO_EXTENSIONS = new Set<string>(FOLDER_AUDIO_EXTENSIONS);
 
-const IMAGE_EXTENSIONS = new Set([
-  'jpg',
-  'jpeg',
-  'png',
-  'webp',
-  'gif',
-  'bmp',
-]);
+const IMAGE_EXTENSIONS = new Set<string>(FOLDER_IMAGE_EXTENSIONS);
 
 const normalizePath = (value: string) =>
   value.replace(/\\/g, '/').replace(/^\/+/, '').trim();

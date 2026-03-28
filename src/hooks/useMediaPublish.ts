@@ -7,6 +7,13 @@ import {
 import { searchQdnResources } from '../services/qdn';
 import type { PlaylistSongReference, SongSummary } from '../types/media';
 import { encodeSongMetadataValue } from '../utils/songMetadata';
+import {
+  COVER_SIZE,
+  MAX_AUDIO_FILE_SIZE,
+  MAX_COVER_FILE_SIZE,
+  MAX_CROP_ZOOM,
+  MIN_CROP_ZOOM,
+} from '../utils/publishLimits';
 
 type ResourceToPublish = Parameters<
   ReturnType<typeof usePublish>['publishMultipleResources']
@@ -71,11 +78,6 @@ export interface PreparedPlaylistPublish {
 }
 
 const sanitizeText = (value: string) => value.trim().replace(/\s+/g, ' ');
-const MAX_AUDIO_FILE_SIZE = 100 * 1024 * 1024;
-const MAX_COVER_FILE_SIZE = 12 * 1024 * 1024;
-const COVER_SIZE = 1200;
-const MIN_CROP_ZOOM = 1;
-const MAX_CROP_ZOOM = 2.5;
 const PUBLISH_VERIFICATION_WINDOW_MS = 45_000;
 const PUBLISH_VERIFICATION_POLL_MS = 2_000;
 
@@ -224,7 +226,7 @@ const validateAudioFile = (file: File) => {
   }
 
   if (file.size > MAX_AUDIO_FILE_SIZE) {
-    throw new Error('Audio file is too large. Keep it below 100 MB.');
+    throw new Error('Audio file is too large. Keep it below 2 GB.');
   }
 };
 

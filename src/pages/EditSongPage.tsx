@@ -9,6 +9,13 @@ import { loadExistingSongAudioFile } from '../services/songs';
 import { useSongDetail } from '../hooks/useSongDetail';
 import { emitMediaRefresh } from '../utils/mediaEvents';
 import { parseSongMetadata } from '../utils/songMetadata';
+import {
+  AUDIO_INPUT_ACCEPT,
+  AUDIO_LIMIT_TEXT,
+  COVER_LIMIT_TEXT,
+  COVER_PROCESSING_TEXT,
+  IMAGE_INPUT_ACCEPT,
+} from '../utils/publishLimits';
 
 export const EditSongPage = () => {
   const { auth } = useGlobal();
@@ -133,6 +140,9 @@ export const EditSongPage = () => {
             body="Update the visible metadata and republish this song on the same identifier. Existing listeners keep the same route."
             meta={['AUDIO', song.identifier]}
           />
+          <Alert severity="info">
+            {AUDIO_LIMIT_TEXT} {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+          </Alert>
           <TextField
             label="Title"
             value={title}
@@ -184,12 +194,15 @@ export const EditSongPage = () => {
             <input
               hidden
               type="file"
-              accept="audio/*"
+              accept={AUDIO_INPUT_ACCEPT}
               onChange={(event) =>
                 setAudioFile(event.target.files?.[0] || null)
               }
             />
           </Button>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            Replacement audio is optional. {AUDIO_LIMIT_TEXT}
+          </Typography>
           <Button variant="outlined" component="label">
             {coverFile
               ? `Cover selected: ${coverFile.name}`
@@ -197,12 +210,16 @@ export const EditSongPage = () => {
             <input
               hidden
               type="file"
-              accept="image/*"
+              accept={IMAGE_INPUT_ACCEPT}
               onChange={(event) =>
                 setCoverFile(event.target.files?.[0] || null)
               }
             />
           </Button>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            Replacement cover is optional. {COVER_LIMIT_TEXT}{' '}
+            {COVER_PROCESSING_TEXT}
+          </Typography>
           <Button
             variant="contained"
             onClick={handleSave}

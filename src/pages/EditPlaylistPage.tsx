@@ -11,6 +11,12 @@ import { mapSongToPlaylistReference } from '../hooks/useMediaPublish';
 import { emitMediaRefresh } from '../utils/mediaEvents';
 import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 import type { SongSummary } from '../types/media';
+import {
+  COVER_LIMIT_TEXT,
+  COVER_PROCESSING_TEXT,
+  IMAGE_INPUT_ACCEPT,
+  PLAYLIST_LIMIT_TEXT,
+} from '../utils/publishLimits';
 
 const SONG_PREFIX = 'enjoymusic_song_';
 
@@ -193,6 +199,9 @@ export const EditPlaylistPage = () => {
             body="Edit the title, description, song selection and ordering here. Saving republishes the playlist on the same identifier."
             meta={['PLAYLIST', playlist.identifier]}
           />
+          <Alert severity="info">
+            {PLAYLIST_LIMIT_TEXT} {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+          </Alert>
           <TextField
             label="Playlist title"
             value={title}
@@ -219,12 +228,16 @@ export const EditPlaylistPage = () => {
             <input
               hidden
               type="file"
-              accept="image/*"
+              accept={IMAGE_INPUT_ACCEPT}
               onChange={(event) =>
                 setCoverFile(event.target.files?.[0] || null)
               }
             />
           </Button>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            Replacement cover is optional. {COVER_LIMIT_TEXT}{' '}
+            {COVER_PROCESSING_TEXT}
+          </Typography>
 
           <TextField
             label="Search songs"
