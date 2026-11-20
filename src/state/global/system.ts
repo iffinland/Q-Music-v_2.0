@@ -12,7 +12,12 @@ const getInitialTheme = () => {
     return EnumTheme.DARK;
   }
 
-  const storedTheme = window.localStorage.getItem(STORAGE_KEY);
+  let storedTheme: string | null = null;
+  try {
+    storedTheme = window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return EnumTheme.DARK;
+  }
   if (storedTheme === 'light') {
     return EnumTheme.LIGHT;
   }
@@ -30,8 +35,12 @@ export const persistThemePreference = (theme: EnumTheme) => {
     return;
   }
 
-  window.localStorage.setItem(
-    STORAGE_KEY,
-    theme === EnumTheme.LIGHT ? 'light' : 'dark'
-  );
+  try {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      theme === EnumTheme.LIGHT ? 'light' : 'dark'
+    );
+  } catch {
+    /* Theme still works in memory when storage is unavailable. */
+  }
 };

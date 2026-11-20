@@ -1,69 +1,54 @@
+import { describeRouteError } from '../../utils/routeErrors';
 import { Alert, Button, Stack, Typography } from '@mui/material';
-import { useRouteError } from 'react-router-dom';
-
-const getErrorMessage = (error: unknown) => {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === 'string') {
-    return error;
-  }
-
-  return '';
-};
-
-export const RouteRefreshNotice = () => {
-  const routeError = useRouteError();
-  const message = getErrorMessage(routeError);
-  const isDynamicImportIssue =
-    /Failed to fetch dynamically imported module/i.test(message) ||
-    /Importing a module script failed/i.test(message);
-
+import { useNavigate, useRouteError } from 'react-router-dom';
+export const RouteRefreshNotice = ({
+  compact = false,
+}: {
+  compact?: boolean;
+}) => {
+  const info = describeRouteError(useRouteError()),
+    navigate = useNavigate();
   return (
     <Stack
-      spacing={2.5}
+      spacing={2}
       sx={{
-        minHeight: '100vh',
-        px: 2,
-        py: 5,
-        alignItems: 'center',
+        minHeight: compact ? 280 : '100vh',
+        p: { xs: 2, sm: 4 },
         justifyContent: 'center',
+        alignItems: 'center',
         background: 'var(--qm-shell-bg)',
+        minWidth: 0,
       }}
     >
       <Stack
         spacing={2}
         sx={{
-          width: '100%',
           maxWidth: 560,
+          width: '100%',
           p: 3,
-          borderRadius: 3,
           border: '1px solid',
           borderColor: 'divider',
-          backgroundColor: 'var(--qm-panel-bg)',
-          boxShadow: 'var(--qm-shadow-soft)',
+          borderRadius: 3,
+          overflowWrap: 'anywhere',
         }}
       >
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
-          Refresh Needed
-        </Typography>
-        <Alert severity="info">
-          {isDynamicImportIssue
-            ? 'A new app version is available. Please refresh the page.'
-            : 'This page needs to be refreshed before it can continue.'}
-        </Alert>
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          This can happen right after the app has been updated and your browser
-          is still using older page files.
-        </Typography>
+        <Typography variant="h4">{info.title}</Typography>
+        <Alert severity="warning">{info.text}</Alert>
         <Button
           variant="contained"
-          onClick={() => window.location.reload()}
-          sx={{ alignSelf: 'flex-start' }}
+          onClick={() => navigate('/songs', { replace: true })}
         >
-          Refresh page
+          Back to music
         </Button>
+        <Button variant="outlined" onClick={() => window.location.reload()}>
+          Reload app
+        </Button>
+        {info.message && (
+          <details>
+            <summary>Error details</summary>
+            <Typography variant="body2">{info.message}</Typography>
+          </details>
+        )}
       </Stack>
     </Stack>
   );

@@ -39,6 +39,9 @@ export interface FolderImportResult {
 }
 
 const AUDIO_EXTENSIONS = new Set<string>(FOLDER_AUDIO_EXTENSIONS);
+export const isImportAudio = (file: File) =>
+  file.type.toLowerCase().startsWith('audio/') ||
+  AUDIO_EXTENSIONS.has(getFileExtension(file.name.trim()));
 
 const IMAGE_EXTENSIONS = new Set<string>(FOLDER_IMAGE_EXTENSIONS);
 
@@ -47,7 +50,9 @@ const normalizePath = (value: string) =>
 
 const getRelativePath = (file: File) =>
   normalizePath(
-    'webkitRelativePath' in file && typeof file.webkitRelativePath === 'string'
+    'webkitRelativePath' in file &&
+      typeof file.webkitRelativePath === 'string' &&
+      file.webkitRelativePath.trim()
       ? file.webkitRelativePath
       : file.name
   );
@@ -58,7 +63,10 @@ const getFileExtension = (name: string) => {
 };
 
 const getBaseName = (name: string) =>
-  name.replace(/\.[^/.]+$/, '').trim().toLowerCase();
+  name
+    .replace(/\.[^/.]+$/, '')
+    .trim()
+    .toLowerCase();
 
 const sanitizeText = (value?: string) =>
   typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
@@ -72,11 +80,7 @@ const inferTitleFromFilename = (name: string) =>
 
 const stripQuotes = (value: string) => {
   const trimmed = value.trim();
-  if (
-    trimmed.length >= 2 &&
-    trimmed.startsWith('"') &&
-    trimmed.endsWith('"')
-  ) {
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
     return trimmed.slice(1, -1).replace(/""/g, '"').trim();
   }
   return trimmed;
@@ -135,7 +139,11 @@ const parseCsvMetadata = (content: string): ImportedSongMetadata[] => {
         return acc;
       }
 
-      acc[header as keyof ImportedSongMetadata] = value;
+      acc[
+        (header === 'publisheddate'
+          ? 'publishedDate'
+          : header) as keyof ImportedSongMetadata
+      ] = value;
       return acc;
     }, {});
   });
@@ -161,7 +169,11 @@ const parseTxtMetadata = (content: string): ImportedSongMetadata[] => {
           return acc;
         }
 
-        acc[key as keyof ImportedSongMetadata] = value;
+        acc[
+          (key === 'publisheddate'
+            ? 'publishedDate'
+            : key) as keyof ImportedSongMetadata
+        ] = value;
         return acc;
       }, {})
     )
@@ -231,11 +243,11 @@ export const parseFolderSelection = async (
   }
 ): Promise<FolderImportResult> => {
   const files = [...inputFiles];
-  const audioFiles = files.filter((file) =>
-    AUDIO_EXTENSIONS.has(getFileExtension(file.name))
-  );
-  const imageFiles = files.filter((file) =>
-    IMAGE_EXTENSIONS.has(getFileExtension(file.name))
+  const audioFiles = files.filter(isImportAudio);
+  const imageFiles = files.filter(
+    (file) =>
+      file.type.startsWith('image/') ||
+      IMAGE_EXTENSIONS.has(getFileExtension(file.name.trim()))
   );
   const metadataFiles = files.filter((file) => {
     const extension = getFileExtension(file.name);
@@ -265,7 +277,9 @@ export const parseFolderSelection = async (
 
   const warnings: string[] = [];
   if (!audioFiles.length) {
-    warnings.push('No supported audio files were found in the selected folder.');
+    warnings.push(
+      'No supported audio files were found in the selected folder.'
+    );
   }
 
   return {
@@ -279,13 +293,14 @@ export const parseFolderSelection = async (
         id: `${getRelativePath(file)}:${index}`,
         file,
         relativePath: getRelativePath(file),
-        title: sanitizeText(metadata?.title) || inferTitleFromFilename(file.name),
+        title:
+          sanitizeText(metadata?.title) || inferTitleFromFilename(file.name),
         artist: sanitizeText(metadata?.artist) || defaults?.defaultArtist || '',
         album: sanitizeText(metadata?.album),
         genre: sanitizeText(metadata?.genre) || defaults?.defaultGenre || '',
         language: sanitizeText(metadata?.language),
         mood: sanitizeText(metadata?.mood),
-        notes: sanitizeText(metadata?.notes),
+        notes: metadata?.notes?.trim() || '',
         publishedDate: sanitizeText(metadata?.publishedDate),
         coverFile: resolveCoverFile(
           metadata,
@@ -293,7 +308,9 @@ export const parseFolderSelection = async (
           imagesByPath,
           imagesByBaseName
         ),
-        metadataSource: metadata?.file ? sanitizeText(metadata.file) : undefined,
+        metadataSource: metadata?.file
+          ? sanitizeText(metadata.file)
+          : undefined,
       };
     }),
     metadataFiles: metadataFiles.map((file) => getRelativePath(file)),

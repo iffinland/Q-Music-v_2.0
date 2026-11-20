@@ -1,4 +1,4 @@
-import { objectToBase64 } from 'qapp-core';
+import { objectToBase64 } from '../qortal/content';
 import {
   fetchQdnResource,
   invalidateQdnCache,

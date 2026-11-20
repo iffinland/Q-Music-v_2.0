@@ -1,4 +1,13 @@
 import type { QdnSearchResource } from '../types/media';
+import {
+  abortError,
+  delay,
+  readQueue,
+  requestError,
+  throwIfAborted,
+  withAbort,
+  type ReadOptions,
+} from './qdnRequests';
 
 interface SearchQdnResourcesParams {
   mode?: 'ALL' | 'LATEST' | 'RANDOM' | string;
@@ -13,6 +22,8 @@ interface SearchQdnResourcesParams {
   includeStatus?: boolean;
   excludeBlocked?: boolean;
   exactMatchNames?: boolean;
+  prefix?: boolean;
+  before?: number;
 }
 
 interface FetchQdnResourceParams {
@@ -56,183 +67,47 @@ const LIKE_ARTIFACT_PREFIXES = [
 const DELETED_MARKER = 'deleted';
 
 const resultCache = new Map<string, { expiresAt: number; value: unknown }>();
-const inflightCache = new Map<string, Promise<unknown>>();
-const SESSION_CACHE_PREFIX = 'qmusic20.qdn.cache:';
+interface PendingRead {
+  promise: Promise<unknown>;
+  controller: AbortController;
+  users: number;
+}
+const inflightCache = new Map<string, PendingRead>();
+let cacheGeneration = 0;
 const QDN_READY_STATUS = 'READY';
 const QDN_BUILDABLE_STATUSES = new Set([
   'PUBLISHED',
-  'DOWNLOADING',
   'DOWNLOADED',
-  'BUILDING',
+  'MISSING_DATA',
 ]);
 const QDN_TERMINAL_ERROR_STATUSES = new Set([
   'UNSUPPORTED',
   'BLOCKED',
   'NOT_PUBLISHED',
-  'MISSING_DATA',
+  'BUILD_FAILED',
 ]);
-
-const normalize = (value: unknown): string => {
-  if (typeof value !== 'string') return '';
-  return value.trim().toLowerCase();
-};
-
-const stableKey = (payload: Record<string, unknown>) => {
-  const ordered = Object.keys(payload)
-    .sort()
-    .reduce<Record<string, unknown>>((acc, key) => {
-      acc[key] = payload[key];
-      return acc;
-    }, {});
-
-  return JSON.stringify(ordered);
-};
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-
-const getSessionStorage = () => {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  try {
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-};
-
-const getPersistedCache = <T>(key: string): T | null => {
-  const storage = getSessionStorage();
-  if (!storage) return null;
-
-  try {
-    const rawValue = storage.getItem(`${SESSION_CACHE_PREFIX}${key}`);
-    if (!rawValue) return null;
-
-    const parsed = JSON.parse(rawValue) as {
-      expiresAt?: number;
-      value?: T;
-    };
-
-    if (typeof parsed.expiresAt !== 'number' || parsed.expiresAt < Date.now()) {
-      storage.removeItem(`${SESSION_CACHE_PREFIX}${key}`);
-      return null;
-    }
-
-    return parsed.value ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const setPersistedCache = (key: string, value: unknown, ttlMs: number) => {
-  const storage = getSessionStorage();
-  if (!storage) return;
-
-  try {
-    storage.setItem(
-      `${SESSION_CACHE_PREFIX}${key}`,
-      JSON.stringify({
-        expiresAt: Date.now() + ttlMs,
-        value,
-      })
-    );
-  } catch {
-    // Ignore storage quota and private-mode failures.
-  }
-};
-
-const getCached = <T>(key: string): T | null => {
-  const entry = resultCache.get(key);
-  if (entry) {
-    if (entry.expiresAt < Date.now()) {
-      resultCache.delete(key);
-    } else {
-      return entry.value as T;
-    }
-  }
-
-  const persistedValue = getPersistedCache<T>(key);
-  if (persistedValue !== null) {
-    return persistedValue;
-  }
-
-  return null;
-};
-
-const setCached = (key: string, value: unknown, ttlMs: number) => {
-  resultCache.set(key, {
-    expiresAt: Date.now() + ttlMs,
-    value,
-  });
-  setPersistedCache(key, value, ttlMs);
-};
-
-const clearCached = (key: string) => {
-  resultCache.delete(key);
-  inflightCache.delete(key);
-
-  const storage = getSessionStorage();
-  if (!storage) return;
-
-  try {
-    storage.removeItem(`${SESSION_CACHE_PREFIX}${key}`);
-  } catch {
-    // Ignore storage access failures.
-  }
-};
-
-const parseStableKey = (key: string): Record<string, unknown> | null => {
-  try {
-    const parsed = JSON.parse(key);
-    return parsed && typeof parsed === 'object'
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-};
+const normalize = (value: unknown): string =>
+  typeof value === 'string' ? value.trim().toLowerCase() : '';
+const stableKey = (payload: Record<string, unknown>) =>
+  JSON.stringify(
+    Object.fromEntries(
+      Object.entries(payload).sort(([a], [b]) => a.localeCompare(b))
+    )
+  );
 
 export const invalidateQdnCache = (
   predicate: (payload: Record<string, unknown>) => boolean
 ) => {
+  cacheGeneration++;
   for (const key of resultCache.keys()) {
-    const payload = parseStableKey(key);
-    if (payload && predicate(payload)) {
-      resultCache.delete(key);
-    }
+    if (predicate(JSON.parse(key))) resultCache.delete(key);
   }
-
-  for (const key of inflightCache.keys()) {
-    const payload = parseStableKey(key);
-    if (payload && predicate(payload)) {
+  for (const [key, entry] of inflightCache) {
+    if (predicate(JSON.parse(key))) {
+      entry.controller.abort();
       inflightCache.delete(key);
     }
   }
-
-  const storage = getSessionStorage();
-  if (!storage) return;
-
-  const keysToRemove: string[] = [];
-  for (let index = 0; index < storage.length; index += 1) {
-    const storageKey = storage.key(index);
-    if (!storageKey?.startsWith(SESSION_CACHE_PREFIX)) {
-      continue;
-    }
-
-    const payload = parseStableKey(storageKey.slice(SESSION_CACHE_PREFIX.length));
-    if (payload && predicate(payload)) {
-      keysToRemove.push(storageKey);
-    }
-  }
-
-  keysToRemove.forEach((key) => {
-    storage.removeItem(key);
-  });
 };
 
 const normalizeStatusField = (value: unknown) =>
@@ -299,33 +174,59 @@ const normalizeQdnStatus = (value: unknown): QdnResourceStatus => {
 
 const runCached = async <T>(
   payload: Record<string, unknown>,
-  ttlMs: number
+  ttlMs: number,
+  validate: (value: unknown) => T,
+  options: ReadOptions = {}
 ): Promise<T> => {
+  throwIfAborted(options.signal);
   const key = stableKey(payload);
-  const cached = getCached<T>(key);
-  if (cached !== null) {
-    return cached;
+  const cached = resultCache.get(key);
+  if (!options.fresh && cached && cached.expiresAt > Date.now())
+    return cached.value as T;
+  resultCache.delete(key);
+  let entry = inflightCache.get(key);
+  if (!entry || entry.controller.signal.aborted) {
+    const controller = new AbortController();
+    const generation = cacheGeneration;
+    const created: PendingRead = {
+      controller,
+      users: 0,
+      promise: Promise.resolve(),
+    };
+    created.promise = readQueue
+      .run(
+        async () => {
+          throwIfAborted(controller.signal);
+          if (typeof qortalRequest !== 'function')
+            throw new Error('Open Q-Music in Qortal Hub to load music.');
+          const result = await qortalRequest(payload as never);
+          throwIfAborted(controller.signal);
+          if (result && typeof result === 'object' && 'error' in result)
+            throw new Error(requestError(result));
+          const value = validate(result);
+          if (ttlMs > 0 && generation === cacheGeneration) {
+            if (resultCache.size >= 256)
+              resultCache.delete(resultCache.keys().next().value!);
+            resultCache.set(key, { expiresAt: Date.now() + ttlMs, value });
+          }
+          return value;
+        },
+        { ...options, signal: controller.signal }
+      )
+      .finally(() => {
+        if (inflightCache.get(key) === created) inflightCache.delete(key);
+      });
+    entry = created;
+    inflightCache.set(key, entry);
   }
-
-  const inflight = inflightCache.get(key);
-  if (inflight) {
-    return inflight as Promise<T>;
+  const shared = entry;
+  shared.users++;
+  try {
+    return await withAbort(shared.promise as Promise<T>, options.signal);
+  } finally {
+    shared.users--;
+    if (shared.users === 0) shared.controller.abort();
   }
-
-  const request = qortalRequest(payload as never)
-    .then((result) => {
-      setCached(key, result, ttlMs);
-      inflightCache.delete(key);
-      return result as T;
-    })
-    .catch((error) => {
-      inflightCache.delete(key);
-      throw error;
-    });
-
-  inflightCache.set(key, request);
-
-  return request;
 };
 
 const hasStringValue = (value: unknown): boolean => {
@@ -386,76 +287,71 @@ export const shouldHideQdnResource = (resource: QdnSearchResource): boolean => {
 };
 
 export const searchQdnResources = async (
-  params: SearchQdnResourcesParams
-): Promise<QdnSearchResource[]> => {
-  const result = await runCached<unknown>(
-    {
-      action: 'SEARCH_QDN_RESOURCES',
-      ...params,
+  params: SearchQdnResourcesParams,
+  options: ReadOptions = {}
+): Promise<QdnSearchResource[]> =>
+  runCached(
+    { action: 'SEARCH_QDN_RESOURCES', ...params },
+    30_000,
+    (value) => {
+      if (
+        !Array.isArray(value) ||
+        value.some(
+          (item) => !item || typeof item !== 'object' || Array.isArray(item)
+        )
+      )
+        throw new Error(
+          'The node returned an invalid music list. Please retry.'
+        );
+      return value as QdnSearchResource[];
     },
-    60_000
+    options
   );
-
-  return Array.isArray(result) ? (result as QdnSearchResource[]) : [];
-};
 
 export const fetchQdnResource = async <T>(
-  params: FetchQdnResourceParams
-): Promise<T | null> => {
-  const result = await runCached<unknown>(
-    {
-      action: 'FETCH_QDN_RESOURCE',
-      ...params,
-    },
-    30_000
+  params: FetchQdnResourceParams,
+  options: ReadOptions = {}
+): Promise<T | null> =>
+  runCached(
+    { action: 'FETCH_QDN_RESOURCE', ...params },
+    30_000,
+    (value) => (value ?? null) as T | null,
+    options
   );
 
-  if (
-    !result ||
-    (typeof result === 'object' && 'error' in (result as object))
-  ) {
-    return null;
-  }
-
-  return result as T;
-};
-
 export const getQdnResourceProperties = async (
-  params: QdnResourcePropertiesParams
+  params: QdnResourcePropertiesParams,
+  options: ReadOptions = {}
 ): Promise<Record<string, unknown> | null> => {
   try {
-    const result = await qortalRequest({
-      action: 'GET_QDN_RESOURCE_PROPERTIES',
-      name: params.name,
-      service: params.service,
-      identifier: params.identifier,
-    } as never);
-
-    return result && typeof result === 'object'
-      ? (result as Record<string, unknown>)
-      : null;
-  } catch {
+    return await runCached(
+      { action: 'GET_QDN_RESOURCE_PROPERTIES', ...params },
+      0,
+      (value) =>
+        value && typeof value === 'object'
+          ? (value as Record<string, unknown>)
+          : null,
+      options
+    );
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
     return null;
   }
 };
 
 export const getQdnResourceStatus = async (
-  params: QdnResourceStatusParams
-): Promise<QdnResourceStatus> => {
-  const result = await qortalRequest({
-    action: 'GET_QDN_RESOURCE_STATUS',
-    name: params.name,
-    service: params.service,
-    identifier: params.identifier,
-    ...(params.build ? { build: true } : {}),
-  } as never);
-
-  return normalizeQdnStatus(result);
-};
+  params: QdnResourceStatusParams,
+  options: ReadOptions = {}
+): Promise<QdnResourceStatus> =>
+  runCached(
+    { action: 'GET_QDN_RESOURCE_STATUS', ...params },
+    0,
+    normalizeQdnStatus,
+    options
+  );
 
 export const isQdnResourceReady = (status?: string) =>
   normalizeStatusField(status) === QDN_READY_STATUS;
-
 export const shouldTriggerQdnBuild = (status?: string) =>
   QDN_BUILDABLE_STATUSES.has(normalizeStatusField(status));
 
@@ -463,106 +359,139 @@ export const waitForQdnResourceReady = async (
   params: QdnResourceStatusParams & {
     timeoutMs?: number;
     pollIntervalMs?: number;
+    signal?: AbortSignal;
+    priority?: ReadOptions['priority'];
     onStatusChange?: (status: QdnResourceStatus) => void;
   }
 ): Promise<QdnResourceStatus> => {
-  const timeoutMs = params.timeoutMs ?? 45_000;
-  const pollIntervalMs = params.pollIntervalMs ?? 1_500;
-  const startedAt = Date.now();
-  let buildTriggered = false;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  params.signal?.addEventListener('abort', onAbort, { once: true });
+  if (params.signal?.aborted) controller.abort();
+  const timer = setTimeout(
+    () => controller.abort(),
+    params.timeoutMs ?? 45_000
+  );
   let latestStatus: QdnResourceStatus = { status: 'UNKNOWN' };
-
-  while (Date.now() - startedAt <= timeoutMs) {
-    latestStatus = await getQdnResourceStatus({
-      name: params.name,
-      service: params.service,
-      identifier: params.identifier,
-      ...(buildTriggered ? { build: false } : {}),
-    });
-    params.onStatusChange?.(latestStatus);
-
-    if (isQdnResourceReady(latestStatus.status)) {
-      return latestStatus;
-    }
-
-    if (!buildTriggered && shouldTriggerQdnBuild(latestStatus.status)) {
-      buildTriggered = true;
-      latestStatus = await getQdnResourceStatus({
-        name: params.name,
-        service: params.service,
-        identifier: params.identifier,
-        build: true,
-      });
+  let buildTriggered = false;
+  try {
+    while (!controller.signal.aborted) {
+      latestStatus = await getQdnResourceStatus(
+        {
+          name: params.name,
+          service: params.service,
+          identifier: params.identifier,
+        },
+        { signal: controller.signal, priority: params.priority }
+      );
       params.onStatusChange?.(latestStatus);
-
-      if (isQdnResourceReady(latestStatus.status)) {
+      if (
+        isQdnResourceReady(latestStatus.status) ||
+        QDN_TERMINAL_ERROR_STATUSES.has(latestStatus.status)
+      )
         return latestStatus;
+      if (!buildTriggered && shouldTriggerQdnBuild(latestStatus.status)) {
+        buildTriggered = true;
+        latestStatus = await getQdnResourceStatus(
+          {
+            name: params.name,
+            service: params.service,
+            identifier: params.identifier,
+            build: true,
+          },
+          { signal: controller.signal, priority: params.priority }
+        );
+        params.onStatusChange?.(latestStatus);
+        if (
+          isQdnResourceReady(latestStatus.status) ||
+          QDN_TERMINAL_ERROR_STATUSES.has(latestStatus.status)
+        )
+          return latestStatus;
       }
+      await delay(params.pollIntervalMs ?? 2_000, controller.signal);
     }
-
-    if (
-      QDN_TERMINAL_ERROR_STATUSES.has(normalizeStatusField(latestStatus.status))
-    ) {
-      return latestStatus;
-    }
-
-    await sleep(pollIntervalMs);
+    return latestStatus;
+  } catch (error) {
+    if (params.signal?.aborted) throw abortError();
+    if (controller.signal.aborted) return latestStatus;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    params.signal?.removeEventListener('abort', onAbort);
   }
-
-  return latestStatus;
 };
 
 export const getQdnResourceUrl = async (
   service: string,
   name: string,
   identifier: string,
-  options?: {
-    retries?: number;
-    retryDelayMs?: number;
-  }
+  options: ReadOptions & { retries?: number; retryDelayMs?: number } = {}
 ): Promise<string | null> => {
-  const payload = {
-    action: 'GET_QDN_RESOURCE_URL',
-    service,
-    name,
-    identifier,
-  } as const;
-  const cacheKey = stableKey(payload);
-  const retries = Math.max(0, options?.retries ?? 0);
-  const retryDelayMs = Math.max(0, options?.retryDelayMs ?? 750);
-
-  const cached = getCached<unknown>(cacheKey);
-  if (typeof cached === 'string' && cached !== 'Resource does not exist') {
-    return cached;
-  }
-  if (cached === 'Resource does not exist') {
-    clearCached(cacheKey);
-  }
-
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const inflight = inflightCache.get(cacheKey);
-    const request =
-      inflight ??
-      qortalRequest(payload as never)
-        .finally(() => {
-          inflightCache.delete(cacheKey);
-        });
-
-    if (!inflight) {
-      inflightCache.set(cacheKey, request);
-    }
-
-    const result = await request;
-    if (typeof result === 'string' && result !== 'Resource does not exist') {
-      setCached(cacheKey, result, 5 * 60_000);
-      return result;
-    }
-
-    clearCached(cacheKey);
-    if (attempt < retries) {
-      await sleep(retryDelayMs);
+  // URLs are node-specific; never retain a previous node's URL in storage.
+  for (let attempt = 0; ; attempt++) {
+    throwIfAborted(options.signal);
+    try {
+      return await runCached(
+        { action: 'GET_QDN_RESOURCE_URL', service, name, identifier },
+        0,
+        (value) => {
+          if (
+            typeof value !== 'string' ||
+            !value.trim() ||
+            value === 'Resource does not exist'
+          )
+            throw new Error('Resource does not exist');
+          const url = new URL(value, window.location.href);
+          if (!['http:', 'https:'].includes(url.protocol))
+            throw new Error('The node returned an invalid resource URL.');
+          return url.href;
+        },
+        options
+      );
+    } catch (error) {
+      throwIfAborted(options.signal);
+      if (attempt >= (options.retries ?? 0))
+        throw new Error(
+          requestError(error, 'Audio could not be loaded. Please retry.')
+        );
+      await delay(options.retryDelayMs ?? 750, options.signal);
     }
   }
+};
 
-  return null;
+export const findExactQdnResource = async (
+  service: string,
+  name: string,
+  identifier: string,
+  options: ReadOptions = {}
+) => {
+  let offset = 0;
+  while (true) {
+    const page = await searchQdnResources(
+      {
+        mode: 'ALL',
+        service,
+        name,
+        exactMatchNames: true,
+        identifier,
+        prefix: true,
+        limit: 100,
+        offset,
+        reverse: true,
+        includeMetadata: true,
+        includeStatus: false,
+        excludeBlocked: true,
+      },
+      options
+    );
+    const match = page.find(
+      (item) =>
+        item.name?.toLowerCase() === name.toLowerCase() &&
+        item.identifier === identifier
+    );
+    if (match) return shouldHideQdnResource(match) ? null : match;
+    if (page.length < 100) return null;
+    offset += page.length;
+    throwIfAborted(options.signal);
+  }
 };

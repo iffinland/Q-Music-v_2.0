@@ -1,3 +1,5 @@
+import { getQdnResourceUrl } from '../services/qdn';
+import { useState as useCommentState } from 'react';
 import {
   Alert,
   Box,
@@ -8,9 +10,10 @@ import {
   Typography,
 } from '@mui/material';
 import { FavoriteBorderRounded, FavoriteRounded } from '@mui/icons-material';
-import { useGlobal } from 'qapp-core';
-import { useState, type ChangeEvent } from 'react';
+import { useGlobal } from '../qortal';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useParams } from 'react-router-dom';
+import { SocialFeedback } from '../components/common/SocialFeedback';
 import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
@@ -35,16 +38,22 @@ export const SongDetailPage = () => {
   const [downloadMessage, setDownloadMessage] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
-  const decodedPublisher = publisher
-    ? decodeURIComponent(publisher)
-    : undefined;
-  const decodedIdentifier = identifier
-    ? decodeURIComponent(identifier)
-    : undefined;
-  const { song, isLoading, error } = useSongDetail(
-    decodedPublisher,
-    decodedIdentifier
-  );
+  const downloadController = useRef<AbortController | null>(null);
+  const viewKey = `${publisher || ''}:${identifier || ''}`;
+  const currentView = useRef(viewKey);
+  currentView.current = viewKey;
+  useEffect(() => {
+    setIsDownloading(false);
+    setDownloadError(null);
+    setDownloadMessage(null);
+    return () => {
+      downloadController.current?.abort();
+    };
+  }, [viewKey]);
+  const decodedPublisher = publisher ? publisher : undefined;
+  const decodedIdentifier = identifier ? identifier : undefined;
+  const { song, isLoading, error, retry, metadataError, isMetadataLoading } =
+    useSongDetail(decodedPublisher, decodedIdentifier);
   const {
     url: artworkUrl,
     isLoading: artworkLoading,
@@ -65,6 +74,12 @@ export const SongDetailPage = () => {
     error: likesError,
     isUpdatingLike,
     toggleLike,
+    canLike,
+    partial: likesPartial,
+    notice: likeNotice,
+    uncertain: likeUncertain,
+    retrySavedLike,
+    refreshLikes,
   } = useEntityLikes({
     entityType: 'song',
     entityId: song?.identifier,
@@ -72,6 +87,7 @@ export const SongDetailPage = () => {
     title: song?.title,
     enabled: Boolean(song?.identifier && song?.publisher),
   });
+  const [commentsOpen, setCommentsOpen] = useCommentState(false);
   const {
     comments,
     isLoading: commentsLoading,
@@ -83,15 +99,23 @@ export const SongDetailPage = () => {
     editComment,
     canLoadMoreComments,
     loadMoreComments,
+    refreshComments,
+    notice: commentNotice,
+    uncertain: commentUncertain,
+    retrySavedComment,
   } = useEntityComments({
     entityType: 'song',
     entityId: song?.identifier,
     entityPublisher: song?.publisher,
     title: song?.title,
-    enabled: Boolean(song?.identifier && song?.publisher),
+    enabled: commentsOpen && Boolean(song?.identifier && song?.publisher),
   });
-  const engagementLoading = likesLoading || commentsLoading;
-  const engagementError = likesError || commentsError;
+  const likesLabel =
+    likeCount === undefined
+      ? likesLoading
+        ? 'Loading likes…'
+        : 'Likes unavailable'
+      : `${likeCount}${likesPartial ? '+' : ''}`;
   const tip = useQortTip({
     recipientName: song?.publisher,
     entityLabel: 'track',
@@ -138,39 +162,43 @@ export const SongDetailPage = () => {
     setDownloadMessage(null);
     setIsDownloading(true);
 
+    const controller = new AbortController();
+    downloadController.current?.abort();
+    downloadController.current = controller;
+    const key = viewKey;
     try {
-      if (typeof qortalRequest !== 'function') {
-        throw new Error('Qortal request bridge is not available.');
-      }
-
-      const downloadUrl =
-        (await qortalRequest({
-          action: 'GET_QDN_RESOURCE_URL',
-          service: 'AUDIO',
-          name: song.publisher,
-          identifier: song.identifier,
-        } as never)) || null;
-
-      if (typeof downloadUrl !== 'string' || !downloadUrl) {
+      const downloadUrl = await getQdnResourceUrl(
+        'AUDIO',
+        song.publisher,
+        song.identifier,
+        { signal: controller.signal }
+      );
+      if (!downloadUrl)
         throw new Error('Audio resource URL could not be resolved.');
-      }
-
       const downloadedFilename = await downloadQdnAudioResource({
         publisher: song.publisher,
         identifier: song.identifier,
         title: song.title,
         resourceUrl: downloadUrl,
+        signal: controller.signal,
       });
-
-      setDownloadMessage(`Downloaded as ${downloadedFilename}.`);
+      if (currentView.current === key && !controller.signal.aborted)
+        setDownloadMessage(
+          `Download requested: ${downloadedFilename}. Check your browser or Hub download manager for progress.`
+        );
     } catch (downloadActionError) {
+      if (currentView.current !== key || controller.signal.aborted) return;
       setDownloadError(
         downloadActionError instanceof Error
           ? downloadActionError.message
           : 'Audio could not be downloaded.'
       );
     } finally {
-      setIsDownloading(false);
+      if (
+        currentView.current === key &&
+        downloadController.current === controller
+      )
+        setIsDownloading(false);
     }
   };
 
@@ -189,17 +217,43 @@ export const SongDetailPage = () => {
               ? `Song: ${decodedIdentifier}`
               : 'Song detail'
         }
-        description="This route is already in place so the next migration step can wire direct QDN resource loading, author metadata, comments and playback entry points without changing the navigation structure again."
+        description="Listen, explore the song details and support its publisher."
       />
-      {error ? <Alert severity="warning">{error}</Alert> : null}
-      {engagementError ? (
-        <Alert severity="warning">{engagementError}</Alert>
+      {error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retry}>Retry</Button>}
+        >
+          {error}
+        </Alert>
       ) : null}
+      {isMetadataLoading ? (
+        <Typography>
+          Loading full song details… You can play the audio now.
+        </Typography>
+      ) : null}
+      {metadataError ? (
+        <Alert
+          severity="info"
+          action={<Button onClick={retry}>Retry details</Button>}
+        >
+          {metadataError}
+        </Alert>
+      ) : null}
+      <SocialFeedback
+        error={likesError}
+        notice={likeNotice}
+        busy={likesLoading || isUpdatingLike}
+        onRefresh={refreshLikes}
+        uncertain={likeUncertain}
+        onRetry={() => void retrySavedLike()}
+        label="likes"
+      />
       {shareError ? <Alert severity="error">{shareError}</Alert> : null}
       {shareMessage ? <Alert severity="success">{shareMessage}</Alert> : null}
       {downloadError ? <Alert severity="error">{downloadError}</Alert> : null}
       {downloadMessage ? (
-        <Alert severity="success">{downloadMessage}</Alert>
+        <Alert severity="info">{downloadMessage}</Alert>
       ) : null}
       {isLoading ? (
         <Typography variant="body2">Loading song details...</Typography>
@@ -254,12 +308,10 @@ export const SongDetailPage = () => {
                 meta={[
                   'AUDIO',
                   song.artist,
-                  engagementLoading
-                    ? 'Loading social...'
-                    : `${likeCount} likes`,
-                  engagementLoading
-                    ? 'Loading comments...'
-                    : `${comments.length} comments`,
+                  likeCount === undefined ? likesLabel : `${likesLabel} likes`,
+                  commentsOpen
+                    ? `${comments.filter((comment) => !comment.deleted).length} loaded comments`
+                    : 'Comments',
                 ]}
               />
             </Grid>
@@ -284,7 +336,7 @@ export const SongDetailPage = () => {
               variant={hasLike ? 'contained' : 'outlined'}
               size="large"
               onClick={() => void toggleLike()}
-              disabled={isUpdatingLike}
+              disabled={!canLike || isUpdatingLike}
               startIcon={
                 hasLike ? (
                   <FavoriteRounded fontSize="small" />
@@ -294,12 +346,16 @@ export const SongDetailPage = () => {
               }
             >
               {isUpdatingLike
-                ? `Updating like... (${likeCount})`
+                ? `Updating like... (${likesLabel})`
                 : hasLike
-                  ? `Unlike (${likeCount})`
-                  : `Like this song (${likeCount})`}
+                  ? `Unlike (${likesLabel})`
+                  : `Like this song (${likesLabel})`}
             </Button>
-            <Button variant="outlined" size="large" onClick={() => void tip.openModal()}>
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={() => void tip.openModal()}
+            >
               Send tip
             </Button>
             <Button
@@ -308,8 +364,18 @@ export const SongDetailPage = () => {
               onClick={() => void handleDownload()}
               disabled={isDownloading}
             >
-              {isDownloading ? 'Downloading...' : 'Download this'}
+              {isDownloading ? 'Preparing download…' : 'Download this'}
             </Button>
+            {isDownloading && (
+              <Button
+                onClick={() => {
+                  downloadController.current?.abort();
+                  setIsDownloading(false);
+                }}
+              >
+                Cancel download request
+              </Button>
+            )}
           </Stack>
           <QortTipModal
             amount={tip.amount}
@@ -327,19 +393,30 @@ export const SongDetailPage = () => {
           />
           <Divider />
           <Stack spacing={1.25}>
-            <CommentSection
-              comments={comments}
-              currentUser={auth?.name || undefined}
-              isLoading={commentsLoading}
-              isSubmittingComment={isSubmittingComment}
-              isEditingComment={isEditingComment}
-              onAddComment={(message) => addComment(message)}
-              onReply={(commentId, message) => addComment(message, commentId)}
-              onEdit={(comment, message) => editComment(comment, message)}
-              onDelete={(comment) => removeComment(comment)}
-              canLoadMore={canLoadMoreComments}
-              onLoadMore={loadMoreComments}
-            />
+            <Button onClick={() => setCommentsOpen((value) => !value)}>
+              {commentsOpen ? 'Hide comments' : 'Show comments'}
+            </Button>
+            {commentsOpen ? (
+              <CommentSection
+                key={`${auth?.address}:${auth?.name}:${decodedPublisher}:${decodedIdentifier}`}
+                error={commentsError}
+                notice={commentNotice}
+                onRefresh={refreshComments}
+                uncertain={commentUncertain}
+                onRetrySaved={() => void retrySavedComment()}
+                comments={comments}
+                currentUser={auth?.name || undefined}
+                isLoading={commentsLoading}
+                isSubmittingComment={isSubmittingComment}
+                isEditingComment={isEditingComment}
+                onAddComment={(message) => addComment(message)}
+                onReply={(commentId, message) => addComment(message, commentId)}
+                onEdit={(comment, message) => editComment(comment, message)}
+                onDelete={(comment) => removeComment(comment)}
+                canLoadMore={canLoadMoreComments}
+                onLoadMore={loadMoreComments}
+              />
+            ) : null}
           </Stack>
         </Stack>
       ) : null}

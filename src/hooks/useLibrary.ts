@@ -1,66 +1,52 @@
-import { useAtom } from 'jotai';
-import {
-  favoritePlaylistsAtom,
-  favoriteSongsAtom,
-  recentSongsAtom,
-} from '../state/library';
+import { useMemo, useSyncExternalStore } from 'react';
+import { useGlobal } from '../qortal';
 import type { PlaylistSummary, SongSummary } from '../types/media';
-
-const upsertById = <T extends { id: string }>(items: T[], nextItem: T) => {
-  const existingIndex = items.findIndex((item) => item.id === nextItem.id);
-  if (existingIndex === -1) {
-    return [...items, nextItem];
-  }
-
-  const next = [...items];
-  next[existingIndex] = nextItem;
-  return next;
-};
-
+import { libraryAccount, libraryFingerprint } from '../services/library/model';
+import {
+  changeLibrary,
+  getLibrarySnapshot,
+  subscribeLibrary,
+} from '../services/library/store';
+import { refreshLibrary, saveLibraryToQdn } from '../services/library/sync';
 export const useLibrary = () => {
-  const [favoriteSongs, setFavoriteSongs] = useAtom(favoriteSongsAtom);
-  const [favoritePlaylists, setFavoritePlaylists] = useAtom(
-    favoritePlaylistsAtom
+  const { auth } = useGlobal();
+  const account = useMemo(
+    () => libraryAccount({ address: auth?.address, name: auth?.name }),
+    [auth?.address, auth?.name]
   );
-  const [recentSongs, setRecentSongs] = useAtom(recentSongsAtom);
-
-  const toggleSong = (song: SongSummary) => {
-    const exists = favoriteSongs.some((item) => item.id === song.id);
-    if (exists) {
-      setFavoriteSongs(favoriteSongs.filter((item) => item.id !== song.id));
-      return false;
-    }
-    setFavoriteSongs(upsertById(favoriteSongs, song));
-    return true;
-  };
-
-  const togglePlaylist = (playlist: PlaylistSummary) => {
-    const exists = favoritePlaylists.some((item) => item.id === playlist.id);
-    if (exists) {
-      setFavoritePlaylists(
-        favoritePlaylists.filter((item) => item.id !== playlist.id)
-      );
-      return false;
-    }
-    setFavoritePlaylists(upsertById(favoritePlaylists, playlist));
-    return true;
-  };
-
-  const addRecentSong = (song: SongSummary) => {
-    const next = [song, ...recentSongs.filter((item) => item.id !== song.id)];
-    setRecentSongs(next.slice(0, 12));
-  };
-
+  const state = useSyncExternalStore(subscribeLibrary, () =>
+    getLibrarySnapshot(account)
+  );
+  const { favoriteSongs, favoritePlaylists, recentSongs } = state.data;
+  const pending = state.remote
+    ? libraryFingerprint(state.data) !== libraryFingerprint(state.remote)
+    : Object.keys(state.data.entries || {}).length > 0;
   return {
+    account,
     favoriteSongs,
     favoritePlaylists,
     recentSongs,
-    isSongFavorite: (songId: string) =>
-      favoriteSongs.some((item) => item.id === songId),
-    isPlaylistFavorite: (playlistId: string) =>
-      favoritePlaylists.some((item) => item.id === playlistId),
-    addRecentSong,
-    toggleSong,
-    togglePlaylist,
+    syncState: state.phase,
+    syncError: state.error,
+    storageError: state.storageError,
+    pending,
+    uncertainSave: Boolean(state.attempt && state.attempt.state !== 'sent'),
+    sentUnchanged: Boolean(
+      state.attempt?.state === 'sent' &&
+        libraryFingerprint(state.attempt.data) ===
+          libraryFingerprint(state.data)
+    ),
+    isSongFavorite: (id: string) =>
+      favoriteSongs.some((item) => item.id === id),
+    isPlaylistFavorite: (id: string) =>
+      favoritePlaylists.some((item) => item.id === id),
+    toggleSong: (song: SongSummary) => changeLibrary(account, 'song', song),
+    togglePlaylist: (playlist: PlaylistSummary) =>
+      changeLibrary(account, 'playlist', playlist),
+    addRecentSong: (song: SongSummary) => {
+      changeLibrary(account, 'recent', song, false);
+    },
+    refresh: () => refreshLibrary(account),
+    save: (allowResend = false) => saveLibraryToQdn(account, allowResend),
   };
 };

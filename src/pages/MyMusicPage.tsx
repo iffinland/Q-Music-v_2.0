@@ -1,13 +1,13 @@
 import { Alert, Button, Grid, Stack, Typography } from '@mui/material';
-import { useGlobal } from 'qapp-core';
-import { useEffect, useState } from 'react';
+import { useGlobal } from '../qortal';
+import { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { ArtworkThumb } from '../components/common/ArtworkThumb';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
-import { fetchPlaylistsByPublisher } from '../services/playlists';
-import { fetchSongsByPublisher } from '../services/songs';
-import type { PlaylistSummary, SongSummary } from '../types/media';
+import { useSongsFeed } from '../hooks/useSongsFeed';
+import { usePlaylistsFeed } from '../hooks/usePlaylistsFeed';
+import { emitMediaRefresh } from '../utils/mediaEvents';
 import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 
@@ -16,55 +16,12 @@ export const MyMusicPage = () => {
   const publisher = auth?.name?.trim() || '';
   const [songLimit, setSongLimit] = useState(24);
   const [playlistLimit, setPlaylistLimit] = useState(24);
-  const [songs, setSongs] = useState<SongSummary[]>([]);
-  const [playlists, setPlaylists] = useState<PlaylistSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!publisher) {
-      setSongs([]);
-      setPlaylists([]);
-      setIsLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const load = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const [loadedSongs, loadedPlaylists] = await Promise.all([
-          fetchSongsByPublisher(publisher, { limit: songLimit }),
-          fetchPlaylistsByPublisher(publisher, { limit: playlistLimit }),
-        ]);
-
-        if (cancelled) return;
-        setSongs(loadedSongs);
-        setPlaylists(loadedPlaylists);
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : 'Failed to load your published music.'
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [playlistLimit, publisher, songLimit]);
+  const songFeed = useSongsFeed(songLimit, publisher);
+  const playlistFeed = usePlaylistsFeed(playlistLimit, publisher);
+  const { songs } = songFeed;
+  const { playlists } = playlistFeed;
+  const isLoading = songFeed.isLoading || playlistFeed.isLoading;
+  const error = songFeed.error || playlistFeed.error;
 
   return (
     <Stack spacing={3}>
@@ -78,7 +35,26 @@ export const MyMusicPage = () => {
           Log in through Qortal to manage your published songs and playlists.
         </Alert>
       ) : null}
-      {error ? <Alert severity="warning">{error}</Alert> : null}
+      {error ? (
+        <Alert
+          severity="warning"
+          action={
+            <Button
+              onClick={() => {
+                songFeed.retry();
+                playlistFeed.retry();
+              }}
+            >
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      ) : null}
+      <Button onClick={emitMediaRefresh} disabled={isLoading}>
+        Refresh my music
+      </Button>
       {isLoading ? (
         <Typography variant="body2">Loading your published music...</Typography>
       ) : null}
@@ -141,9 +117,10 @@ export const MyMusicPage = () => {
                 No published songs were found for your current Qortal name.
               </Typography>
             )}
-            {songs.length >= songLimit ? (
+            {songFeed.hasMore ? (
               <Button
                 variant="outlined"
+                disabled={songFeed.isLoading}
                 onClick={() => setSongLimit((current) => current + 24)}
               >
                 Load more songs
@@ -208,9 +185,10 @@ export const MyMusicPage = () => {
                 No published playlists were found for your current Qortal name.
               </Typography>
             )}
-            {playlists.length >= playlistLimit ? (
+            {playlistFeed.hasMore ? (
               <Button
                 variant="outlined"
+                disabled={playlistFeed.isLoading}
                 onClick={() => setPlaylistLimit((current) => current + 24)}
               >
                 Load more playlists

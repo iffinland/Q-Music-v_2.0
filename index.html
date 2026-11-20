@@ -2,13 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" href="./qmusic.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Q-Music 2.0</title>
+    <title>Q-Music 2.0.2</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="boot-status" role="status" style="max-width:560px;margin:15vh auto;padding:24px;font-family:system-ui,sans-serif"><h1>Q-Music</h1><p>Loading music…</p><p id="boot-help" hidden>App files are taking longer to load. Check your connection and Qortal node, then reload.</p><button id="boot-reload" hidden onclick="window.location.reload()">Reload app</button></div></div>
+    <script>setTimeout(function(){var help=document.getElementById('boot-help');var button=document.getElementById('boot-reload');if(help)help.hidden=false;if(button)button.hidden=false;},15000);</script>
     <script type="module" src="/src/main.tsx"></script>
-    <script type="module" src="/sw-video-decrypt.js"></script>
+
   </body>
 </html>

@@ -1,6 +1,7 @@
+import { isAbortError, throwIfAborted } from '../services/qdnRequests';
 import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
-import { useGlobal } from 'qapp-core';
-import { useEffect, useState } from 'react';
+import { useGlobal } from '../qortal';
+import { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
@@ -20,14 +21,10 @@ import {
 export const EditSongPage = () => {
   const { auth } = useGlobal();
   const { identifier } = useParams();
-  const decodedIdentifier = identifier
-    ? decodeURIComponent(identifier)
-    : undefined;
+  const decodedIdentifier = identifier ? identifier : undefined;
   const publisher = auth?.name?.trim();
-  const { song, isLoading, error } = useSongDetail(
-    publisher,
-    decodedIdentifier
-  );
+  const { song, isLoading, error, isMetadataLoading, metadataError, retry } =
+    useSongDetail(publisher, decodedIdentifier);
   const { publishSong } = useMediaPublish();
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -44,6 +41,25 @@ export const EditSongPage = () => {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const contextKey = `${auth?.address}:${publisher?.toLowerCase()}:${decodedIdentifier}`;
+  const currentContext = useRef(contextKey);
+  currentContext.current = contextKey;
+  const reuseController = useRef<AbortController | null>(null),
+    saving = useRef(false);
+  const [isPreparingAudio, setIsPreparingAudio] = useState(false);
+  useEffect(() => {
+    saving.current = false;
+    setIsSaving(false);
+    setIsPreparingAudio(false);
+    setAudioFile(null);
+    setCoverFile(null);
+    setSavePhase(null);
+    setSaveError(null);
+    setStatus(null);
+    return () => {
+      reuseController.current?.abort();
+    };
+  }, [contextKey]);
   useEffect(() => {
     if (!song) return;
     const parsed = parseSongMetadata(song.description);
@@ -53,16 +69,30 @@ export const EditSongPage = () => {
     setGenre(parsed.genre || '');
     setMood(parsed.mood || '');
     setLanguage(parsed.language || '');
-    setNotes(parsed.notes || '');
+    setNotes(song.notes ?? parsed.notes ?? '');
     setPublishedDate(parsed.publishedDate || '');
   }, [song]);
 
   const handleSave = async () => {
-    if (!song) {
+    if (
+      !song ||
+      isMetadataLoading ||
+      metadataError ||
+      saving.current ||
+      song.publisher.toLowerCase() !== publisher?.toLowerCase() ||
+      song.identifier !== decodedIdentifier
+    ) {
       return;
     }
 
+    saving.current = true;
+    const key = contextKey,
+      controller = new AbortController();
+    reuseController.current = controller;
+    const current = () =>
+      currentContext.current === key && reuseController.current === controller;
     setIsSaving(true);
+    setIsPreparingAudio(true);
     setSaveError(null);
     setStatus(null);
     setSavePhase('Preparing your song update...');
@@ -74,14 +104,21 @@ export const EditSongPage = () => {
         fileToPublish = await loadExistingSongAudioFile({
           publisher: song.publisher,
           identifier: song.identifier,
-          onStatusChange: setSavePhase,
+          signal: controller.signal,
+          onStatusChange: (phase) => {
+            if (current()) setSavePhase(phase);
+          },
         });
       } else {
         setSavePhase('Using the selected replacement audio file...');
       }
 
+      throwIfAborted(controller.signal);
+      if (!current()) return;
+      setIsPreparingAudio(false);
       setSavePhase('Publishing your updated song to QDN...');
       const result = await publishSong({
+        signal: controller.signal,
         title: title.trim() || song.title,
         artist: artist.trim() || song.artist,
         album,
@@ -94,21 +131,31 @@ export const EditSongPage = () => {
         coverFile,
         existingIdentifier: song.identifier,
       });
-      setStatus(
-        `Published successfully. Song updates are now live as ${result.identifier}.`
-      );
-      setAudioFile(null);
-      setCoverFile(null);
+      if (!current()) return;
+      setStatus(`${result.title}: ${result.outcome.message}`);
+      if (result.outcome.complete) {
+        setAudioFile(null);
+        setCoverFile(null);
+      }
       emitMediaRefresh();
     } catch (publishError) {
+      if (!current()) return;
+      if (isAbortError(publishError)) {
+        setStatus('Audio preparation cancelled.');
+        return;
+      }
       setSaveError(
         publishError instanceof Error
           ? publishError.message
           : 'Failed to update song.'
       );
     } finally {
-      setIsSaving(false);
-      setSavePhase(null);
+      if (current()) {
+        saving.current = false;
+        setIsSaving(false);
+        setIsPreparingAudio(false);
+        setSavePhase(null);
+      }
     }
   };
 
@@ -125,12 +172,20 @@ export const EditSongPage = () => {
         </Alert>
       ) : null}
       {error ? <Alert severity="warning">{error}</Alert> : null}
+      {metadataError ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retry}>Retry details</Button>}
+        >
+          {metadataError}
+        </Alert>
+      ) : null}
       {saveError ? <Alert severity="error">{saveError}</Alert> : null}
-      {status ? <Alert severity="success">{status}</Alert> : null}
+      {status ? <Alert severity="info">{status}</Alert> : null}
       {savePhase && !status && !saveError ? (
         <Alert severity="info">{savePhase}</Alert>
       ) : null}
-      {isLoading ? (
+      {isLoading || isMetadataLoading ? (
         <Typography variant="body2">Loading song editor...</Typography>
       ) : song ? (
         <Stack spacing={2}>
@@ -200,8 +255,15 @@ export const EditSongPage = () => {
               }
             />
           </Button>
+          {isPreparingAudio && (
+            <Button onClick={() => reuseController.current?.abort()}>
+              Cancel audio preparation
+            </Button>
+          )}
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            Replacement audio is optional. {AUDIO_LIMIT_TEXT}
+            Automatic reuse downloads up to 64 MiB. For larger files, choose the
+            original file on your device. Replacement audio is optional.{' '}
+            {AUDIO_LIMIT_TEXT}
           </Typography>
           <Button variant="outlined" component="label">
             {coverFile
@@ -223,7 +285,14 @@ export const EditSongPage = () => {
           <Button
             variant="contained"
             onClick={handleSave}
-            disabled={isSaving || !publisher}
+            disabled={
+              isSaving ||
+              song.publisher.toLowerCase() !== publisher?.toLowerCase() ||
+              song.identifier !== decodedIdentifier ||
+              !publisher ||
+              isMetadataLoading ||
+              Boolean(metadataError)
+            }
           >
             {isSaving ? 'Saving...' : 'Save song changes'}
           </Button>

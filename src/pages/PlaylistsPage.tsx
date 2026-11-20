@@ -16,6 +16,11 @@ import { ArtworkThumb } from '../components/common/ArtworkThumb';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
 import { usePlaylistsFeed } from '../hooks/usePlaylistsFeed';
+import { fetchAllPlaylists } from '../services/playlists';
+import { useMediaCatalog } from '../hooks/useMediaCatalog';
+import { usePlaylistCounts } from '../hooks/usePlaylistCounts';
+import { mergeMedia } from '../utils/mediaIdentity';
+import { emitMediaRefresh } from '../utils/mediaEvents';
 import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
 
 export const PlaylistsPage = () => {
@@ -25,41 +30,84 @@ export const PlaylistsPage = () => {
   const [limit, setLimit] = useState(pageSize);
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'latest' | 'title' | 'tracks'>('latest');
-  const { playlists, isLoading, error } = usePlaylistsFeed(limit);
+  const { playlists, isLoading, error, hasMore, retry } =
+    usePlaylistsFeed(limit);
   const deferredQuery = useDeferredValue(query);
 
+  const expanded = Boolean(deferredQuery.trim()) || sortBy !== 'latest';
+  const catalog = useMediaCatalog(fetchAllPlaylists, expanded);
+  const allPlaylists = useMemo(
+    () => mergeMedia(playlists, catalog.items),
+    [playlists, catalog.items]
+  );
+  const { counts, isLoading: countsLoading } = usePlaylistCounts(
+    allPlaylists,
+    sortBy === 'tracks'
+  );
   const visiblePlaylists = useMemo(() => {
     const normalizedQuery = deferredQuery.trim().toLowerCase();
-    const filtered = playlists.filter((playlist) => {
-      if (!normalizedQuery) return true;
-      return [playlist.title, playlist.publisher, playlist.description || '']
-        .join(' ')
-        .toLowerCase()
-        .includes(normalizedQuery);
-    });
+    const filtered = (expanded ? allPlaylists : playlists)
+      .map((item) => ({
+        ...item,
+        songCount: counts[item.id] ?? item.songCount,
+      }))
+      .filter((playlist) => {
+        if (!normalizedQuery) return true;
+        return [playlist.title, playlist.publisher, playlist.description || '']
+          .join(' ')
+          .toLowerCase()
+          .includes(normalizedQuery);
+      });
 
     return [...filtered].sort((left, right) => {
       if (sortBy === 'title') {
         return left.title.localeCompare(right.title);
       }
       if (sortBy === 'tracks') {
-        return right.songCount - left.songCount;
+        return (right.songCount ?? -1) - (left.songCount ?? -1);
       }
       return (
         (right.updated || right.created || 0) -
         (left.updated || left.created || 0)
       );
     });
-  }, [deferredQuery, playlists, sortBy]);
+  }, [deferredQuery, playlists, sortBy, expanded, allPlaylists, counts]);
 
   return (
     <Stack spacing={3}>
-      <PageHero
-        eyebrow=""
-        title="Keep playlist browsing familiar while the underlying stack changes."
-        description=""
-      />
-      {error ? <Alert severity="warning">{error}</Alert> : null}
+      <PageHero eyebrow="" title="Explore playlists" description="" />
+      {error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retry}>Retry</Button>}
+        >
+          {error}
+        </Alert>
+      ) : null}
+      {catalog.error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={catalog.retry}>Retry search</Button>}
+        >
+          {catalog.error} Showing results loaded so far.
+        </Alert>
+      ) : null}
+      {catalog.isLoading ? (
+        <Alert severity="info">
+          Searching playlists. More results may appear.
+        </Alert>
+      ) : null}
+      {countsLoading ? (
+        <Typography>
+          Loading track counts. You can open a playlist now.
+        </Typography>
+      ) : null}
+      <Button
+        onClick={emitMediaRefresh}
+        disabled={isLoading || catalog.isLoading}
+      >
+        Refresh playlists
+      </Button>
       <Stack
         direction={{ xs: 'column', md: 'row' }}
         spacing={2}
@@ -95,7 +143,7 @@ export const PlaylistsPage = () => {
         </TextField>
       </Stack>
       <Grid container spacing={2.5}>
-        {isLoading
+        {isLoading && playlists.length === 0
           ? Array.from({ length: 6 }).map((_, index) => (
               <Grid key={index} size={{ xs: 12, md: 4 }}>
                 <Skeleton variant="rounded" height={220} />
@@ -121,7 +169,12 @@ export const PlaylistsPage = () => {
                     publishedDate: playlist.publishedDate,
                     songCount: playlist.songCount,
                   })}
-                  meta={['PLAYLIST', `${playlist.songCount} tracks`]}
+                  meta={[
+                    'PLAYLIST',
+                    ...(typeof playlist.songCount === 'number'
+                      ? [`${playlist.songCount} tracks`]
+                      : []),
+                  ]}
                   action={
                     <Button
                       component={RouterLink}
@@ -147,9 +200,25 @@ export const PlaylistsPage = () => {
         </Typography>
         <Button
           variant="contained"
-          onClick={() => setLimit((current) => current + pageSize)}
+          disabled={
+            isLoading ||
+            (expanded ? catalog.complete || catalog.isLoading : !hasMore)
+          }
+          onClick={() =>
+            expanded
+              ? catalog.retry()
+              : setLimit((current) => current + pageSize)
+          }
         >
-          Load more
+          {isLoading
+            ? 'Loading…'
+            : expanded
+              ? catalog.complete
+                ? 'All search results loaded'
+                : 'Continue search'
+              : hasMore
+                ? 'Load more'
+                : 'All playlists loaded'}
         </Button>
       </Stack>
     </Stack>

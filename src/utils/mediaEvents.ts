@@ -1,7 +1,9 @@
+import { invalidateQdnCache } from '../services/qdn';
 const MEDIA_REFRESH_EVENT = 'media:refresh';
 
 export const emitMediaRefresh = () => {
   if (typeof window === 'undefined') return;
+  invalidateQdnCache(() => true);
   window.dispatchEvent(new CustomEvent(MEDIA_REFRESH_EVENT));
 };
 

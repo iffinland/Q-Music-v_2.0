@@ -24,10 +24,6 @@ export default defineConfig({
             return 'mui';
           }
 
-          if (id.includes('qapp-core')) {
-            return 'qapp-core';
-          }
-
           if (id.includes('jotai')) {
             return 'state';
           }

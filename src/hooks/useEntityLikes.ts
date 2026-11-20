@@ -1,137 +1,143 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useGlobal } from 'qapp-core';
-import {
-  fetchLikeCount,
-  hasUserLiked,
-  likeEntity,
-  unlikeEntity,
-} from '../services/entityLikes';
-
-export const useEntityLikes = (params: {
-  entityType: 'song' | 'playlist';
-  entityId?: string;
-  entityPublisher?: string;
-  title?: string;
-  enabled?: boolean;
-}) => {
-  const { auth } = useGlobal();
-  const [likeCount, setLikeCount] = useState(0);
-  const [hasLike, setHasLike] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isUpdatingLike, setIsUpdatingLike] = useState(false);
-
-  const refreshLikes = useCallback(async () => {
-    if (!params.enabled || !params.entityId) {
-      setLikeCount(0);
-      setHasLike(false);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const count = await fetchLikeCount(params.entityType, params.entityId);
-      setLikeCount(count);
-    } catch {
-      setLikeCount(0);
-      setError('Failed to load likes.');
-    }
-
-    if (!auth?.name) {
-      setHasLike(false);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const liked = await hasUserLiked(params.entityType, auth.name, params.entityId);
-      setHasLike(liked);
-    } catch {
-      setHasLike(false);
-      setError((current) => current ?? 'Failed to load likes.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [auth?.name, params.enabled, params.entityId, params.entityType]);
-
+import { useEffect, useRef, useState } from 'react';
+import { fetchLikes, setLike, type LikesResult } from '../services/entityLikes';
+import { requestError } from '../services/qdnRequests';
+import { sendSocial, confirmSocial } from '../services/engagement/shared';
+import { useSocialContext, type SocialParams } from './useSocialContext';
+export const useEntityLikes = (params: SocialParams) => {
+  const context = useSocialContext(params);
+  const [state, setState] = useState<{
+    key: string;
+    data?: LikesResult;
+    loading: boolean;
+    error: string;
+    busy: boolean;
+    notice: string;
+  }>({ key: '', loading: false, error: '', busy: false, notice: '' });
+  const [tick, setTick] = useState(0),
+    busy = useRef(false),
+    request = useRef(0);
   useEffect(() => {
-    if (!params.enabled) {
-      setLikeCount(0);
-      setHasLike(false);
-      setIsLoading(false);
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void refreshLikes();
-    }, 200);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [params.enabled, refreshLikes]);
-
-  const toggleLike = useCallback(async () => {
-    if (
-      !auth?.name ||
-      !params.entityId ||
-      !params.entityPublisher ||
-      !params.title
-    ) {
-      setError('Log in to use likes.');
-      return;
-    }
-
-    setIsUpdatingLike(true);
-    setError(null);
-
+    const token = ++request.current,
+      controller = new AbortController();
+    busy.current = false;
+    if (!context.enabled) return;
+    setState((previous) => ({
+      key: context.key,
+      data: previous.key === context.key ? previous.data : undefined,
+      loading: true,
+      error: '',
+      busy: false,
+      notice: previous.key === context.key ? previous.notice : '',
+    }));
+    void fetchLikes(context.target, context.actor, {
+      signal: controller.signal,
+    })
+      .then((data) => {
+        if (token === request.current && context.isCurrent()) {
+          setState((previous) => ({
+            ...previous,
+            data,
+            loading: false,
+            error: data.warning,
+          }));
+          for (const entry of data.confirmed || [])
+            confirmSocial(
+              context.actor,
+              context.target,
+              entry.identifier,
+              entry.revision
+            );
+        }
+      })
+      .catch((error) => {
+        if (
+          !controller.signal.aborted &&
+          token === request.current &&
+          context.isCurrent()
+        )
+          setState((previous) => ({
+            ...previous,
+            loading: false,
+            error: requestError(
+              error,
+              'Likes could not be loaded. Retry when the node is ready.'
+            ),
+          }));
+      });
+    return () => controller.abort();
+    // A context key includes actor, resource owner, ID, type and enabled state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context.key, tick]);
+  const live = state.key === context.key && context.enabled ? state : undefined;
+  const authors = { ...live?.data?.authors };
+  const pending = context.pending.filter((op) => op.kind === 'like');
+  const sent = pending.find((op) => op.state === 'sent');
+  if (sent) authors[context.actor.name.toLowerCase()] = !sent.payload.deleted;
+  const hasLike = Boolean(authors[context.actor.name.toLowerCase()]);
+  const work = async (retry = false) => {
+    if (busy.current || !context.enabled) return;
+    busy.current = true;
+    request.current++;
+    setState((previous) => ({
+      ...previous,
+      key: context.key,
+      busy: true,
+      loading: false,
+      error: '',
+    }));
     try {
-      if (hasLike) {
-        await unlikeEntity(params.entityType, auth.name, params.entityId);
-        setHasLike(false);
-        setLikeCount((value) => Math.max(0, value - 1));
-      } else {
-        await likeEntity({
-          entityType: params.entityType,
-          username: auth.name,
-          entityId: params.entityId,
-          entityPublisher: params.entityPublisher,
-          title: params.title,
-        });
-        setHasLike(true);
-        setLikeCount((value) => value + 1);
-      }
-
-      await refreshLikes();
-    } catch (likeError) {
-      setError(
-        likeError instanceof Error
-          ? likeError.message
-          : 'Failed to update like status.'
-      );
+      const uncertain = pending.find((op) => op.state === 'uncertain');
+      if (retry && uncertain)
+        await sendSocial(uncertain, context.isCurrent, true);
+      else
+        await setLike(
+          context.target,
+          context.actor,
+          !hasLike,
+          context.isCurrent
+        );
+      if (context.isCurrent())
+        setState((previous) => ({
+          ...previous,
+          notice: 'Action sent. It may take time to appear on other nodes.',
+        }));
+    } catch (error) {
+      if (context.isCurrent())
+        setState((previous) => ({ ...previous, error: requestError(error) }));
     } finally {
-      setIsUpdatingLike(false);
+      if (context.isCurrent()) {
+        busy.current = false;
+        setState((previous) => ({ ...previous, busy: false }));
+      }
     }
-  }, [
-    auth?.name,
-    hasLike,
-    params.entityId,
-    params.entityPublisher,
-    params.entityType,
-    params.title,
-    refreshLikes,
-  ]);
-
+  };
   return {
-    likeCount,
+    likeCount: live?.data
+      ? Object.values(authors).filter(Boolean).length
+      : undefined,
     hasLike,
-    isLoading,
-    error,
-    isUpdatingLike,
-    toggleLike,
-    refreshLikes,
+    isLoading: context.enabled && (!live || live.loading),
+    error: context.storageError || live?.error || null,
+    notice:
+      live?.notice ||
+      (pending.length
+        ? 'Your saved like action is waiting for propagation or checking.'
+        : ''),
+    isUpdatingLike: Boolean(live?.busy),
+    canLike: Boolean(
+      live?.data &&
+        !live.loading &&
+        !live.busy &&
+        context.actor.address &&
+        context.actor.name &&
+        !context.storageError &&
+        (!live.error || live.error === live.data.warning) &&
+        !pending.some((op) => op.state === 'uncertain')
+    ),
+    partial: live?.data?.partial || false,
+    uncertain: pending.some((op) => op.state === 'uncertain'),
+    toggleLike: () => work(),
+    retrySavedLike: () => work(true),
+    refreshLikes: () => setTick((value) => value + 1),
   };
 };

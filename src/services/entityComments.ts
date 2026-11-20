@@ -1,185 +1,204 @@
-import { fetchQdnResource, searchQdnResources } from './qdn';
+import type { QdnSearchResource } from '../types/media';
 import type { MediaComment } from '../types/engagement';
+import type { ReadOptions } from './qdnRequests';
 import {
-  FETCH_LIMIT,
-  buildEntityKey,
-  buildShortId,
-  deleteQdnResource,
-  encodeObject,
-  performQortalRequest,
-} from './entityEngagementShared';
-
-const SONG_COMMENT_PREFIX = 'enjoymusic_song_comment_';
-const PLAYLIST_COMMENT_PREFIX = 'enjoymusic_playlist_comment_';
-
-const getCommentPrefix = (entityType: 'song' | 'playlist') =>
-  entityType === 'song' ? SONG_COMMENT_PREFIX : PLAYLIST_COMMENT_PREFIX;
-
-export const fetchComments = async (
-  entityType: 'song' | 'playlist',
-  entityPublisher: string,
-  entityId: string,
-  options?: { limit?: number }
-): Promise<MediaComment[]> => {
-  const prefix = getCommentPrefix(entityType);
-  const maxComments = options?.limit ?? 25;
-  let offset = 0;
-  const comments: MediaComment[] = [];
-
-  while (true) {
-    const page = await searchQdnResources({
-      mode: 'ALL',
-      service: 'DOCUMENT',
-      query: prefix,
-      limit: FETCH_LIMIT,
-      offset,
-      reverse: true,
-      includeMetadata: true,
-      includeStatus: false,
-      excludeBlocked: true,
-    });
-
-    if (!page.length) break;
-
-    const resolved = await Promise.all(
-      page.map(async (entry) => {
-        try {
-          const identifier =
-            typeof entry.identifier === 'string' ? entry.identifier : '';
-          if (!identifier) return null;
-
-          const payload = await fetchQdnResource<Partial<MediaComment>>({
-            name: entry.name || '',
-            service: 'DOCUMENT',
-            identifier,
-          });
-
-          if (!payload?.entityId || payload.entityId !== entityId) return null;
-          if (payload.entityType !== entityType) return null;
-
-          const comment: MediaComment = {
-            id: identifier,
-            entityType,
-            entityId,
-            entityPublisher,
-            author: payload.author || entry.name || 'unknown',
-            message: payload.message || '',
-            parentId:
-              typeof payload.parentId === 'string' ? payload.parentId : undefined,
-            created:
-              typeof payload.created === 'number'
-                ? payload.created
-                : typeof entry.created === 'number'
-                  ? entry.created
-                  : Date.now(),
-            updated:
-              typeof payload.updated === 'number' ? payload.updated : undefined,
-          };
-
-          return comment;
-        } catch {
-          return null;
-        }
-      })
+  commentPrefix,
+  legacyCommentPrefix,
+  sameTarget,
+  socialId,
+  prepareSocial,
+  sendSocial,
+  type Actor,
+  type Target,
+} from './engagement/shared';
+import {
+  mapSocial,
+  readSocial,
+  searchSocial,
+  socialMetadata,
+  socialReadBudget,
+} from './engagement/read';
+export interface CommentCursor {
+  before: number;
+  modern: number;
+  legacy: number;
+  modernDone: boolean;
+  legacyDone: boolean;
+  retry: QdnSearchResource[];
+}
+export const initialCommentCursor = (): CommentCursor => ({
+  before: Date.now() + 1,
+  modern: 0,
+  legacy: 0,
+  modernDone: false,
+  legacyDone: false,
+  retry: [],
+});
+export const commentFromPayload = (
+  name: string,
+  identifier: string,
+  payload: Record<string, unknown>,
+  target: Target
+): MediaComment | null => {
+  if (
+    !sameTarget(payload as Partial<Target>, target) ||
+    (payload.author &&
+      String(payload.author).toLowerCase() !== name.toLowerCase()) ||
+    typeof payload.message !== 'string' ||
+    typeof payload.created !== 'number' ||
+    !Number.isFinite(payload.created) ||
+    payload.created < 0 ||
+    payload.created > 8.64e15 ||
+    payload.message.length > 8192
+  )
+    return null;
+  return {
+    id: socialId(name, identifier),
+    resourceId: identifier,
+    ...target,
+    author: name,
+    message: payload.message,
+    created: payload.created,
+    updated: typeof payload.updated === 'number' ? payload.updated : undefined,
+    parentId:
+      typeof payload.parentId === 'string' ? payload.parentId : undefined,
+    deleted: payload.deleted === true,
+    revision:
+      typeof payload.revision === 'string' ? payload.revision : undefined,
+  };
+};
+const readCommentsPage = async (
+  target: Target,
+  actor: Actor,
+  cursor = initialCommentCursor(),
+  options: ReadOptions = {}
+) => {
+  const confirmed: { identifier: string; revision: string }[] = [];
+  const next: CommentCursor = { ...cursor, retry: cursor.retry.slice(10) },
+    resources = cursor.retry.slice(0, 10);
+  const prefixes = [commentPrefix(target), legacyCommentPrefix(target)];
+  for (const [index, prefix] of prefixes.entries()) {
+    const offsetKey = index ? 'legacy' : 'modern',
+      doneKey = index ? 'legacyDone' : 'modernDone';
+    if (cursor[doneKey]) continue;
+    const page = await searchSocial(
+      prefix,
+      10,
+      cursor[offsetKey],
+      options,
+      undefined,
+      cursor.before
     );
-
-    comments.push(
-      ...resolved.filter((comment): comment is MediaComment => Boolean(comment))
+    next[offsetKey] += page.length;
+    next[doneKey] = page.length < 10;
+    resources.push(
+      ...page.filter(
+        (entry) => entry.name && entry.identifier?.startsWith(prefix)
+      )
     );
-
-    if (comments.length >= maxComments) {
-      break;
-    }
-
-    if (page.length < FETCH_LIMIT) break;
-    offset += page.length;
   }
-
-  return comments
-    .sort((left, right) => (right.created || 0) - (left.created || 0))
-    .slice(0, maxComments);
-};
-
-export const publishComment = async (params: {
-  entityType: 'song' | 'playlist';
-  entityId: string;
-  entityPublisher: string;
-  author: string;
-  message: string;
-  title: string;
-  parentId?: string;
-}) => {
-  const identifier = `${getCommentPrefix(params.entityType)}${buildEntityKey(params.entityId)}_${buildShortId()}`;
-  const timestamp = Date.now();
-  const payload: MediaComment = {
-    id: identifier,
-    entityType: params.entityType,
-    entityId: params.entityId,
-    entityPublisher: params.entityPublisher,
-    author: params.author,
-    message: params.message,
-    parentId: params.parentId,
-    created: timestamp,
-    updated: timestamp,
+  const unique = [
+    ...new Map(
+      resources
+        .filter((entry) => entry.name && entry.identifier)
+        .map((entry) => [socialId(entry.name!, entry.identifier!), entry])
+    ).values(),
+  ];
+  const resolved = await mapSocial(unique, async (entry) => {
+    try {
+      const data = await readSocial(entry, options);
+      if (!data) {
+        next.retry.push(entry);
+        return null;
+      }
+      const indexed = socialMetadata(entry, 'comment');
+      if (
+        indexed &&
+        (data.revision !== indexed.revision ||
+          indexed.active === (data.deleted === true))
+      ) {
+        next.retry.push(entry);
+        return null;
+      }
+      const comment = commentFromPayload(
+        entry.name!,
+        entry.identifier!,
+        data,
+        target
+      );
+      if (
+        comment?.revision &&
+        comment.author.toLowerCase() === actor.name.toLowerCase()
+      )
+        confirmed.push({
+          identifier: comment.resourceId!,
+          revision: comment.revision,
+        });
+      return comment;
+    } catch {
+      next.retry.push(entry);
+      return null;
+    }
+  });
+  return {
+    comments: resolved.filter((comment): comment is MediaComment =>
+      Boolean(comment)
+    ),
+    cursor: next,
+    confirmed,
+    hasMore: !next.modernDone || !next.legacyDone || next.retry.length > 0,
+    warning: next.retry.length
+      ? 'Some comments are unavailable on this node. Loaded comments are kept; refresh or load more to retry.'
+      : '',
   };
-
-  await performQortalRequest(
-    {
-      action: 'PUBLISH_QDN_RESOURCE',
-      name: params.author,
-      service: 'DOCUMENT',
-      identifier,
-      data64: await encodeObject(payload),
-      encoding: 'base64',
-      title: `Comment on ${params.title}`.slice(0, 55),
-      description: params.message.slice(0, 4000),
-    },
-    'Failed to publish comment.'
-  );
-
-  return payload;
 };
-
-export const deleteComment = async (author: string, identifier: string) => {
-  await deleteQdnResource(author, identifier);
-};
-
-export const updateComment = async (params: {
-  entityType: 'song' | 'playlist';
-  entityId: string;
-  entityPublisher: string;
-  author: string;
-  identifier: string;
-  message: string;
-  title: string;
-  parentId?: string;
-  created: number;
-}) => {
-  const payload: MediaComment = {
-    id: params.identifier,
-    entityType: params.entityType,
-    entityId: params.entityId,
-    entityPublisher: params.entityPublisher,
-    author: params.author,
-    message: params.message,
-    parentId: params.parentId,
-    created: params.created,
-    updated: Date.now(),
-  };
-
-  await performQortalRequest(
-    {
-      action: 'PUBLISH_QDN_RESOURCE',
-      name: params.author,
-      service: 'DOCUMENT',
-      identifier: params.identifier,
-      data64: await encodeObject(payload),
-      encoding: 'base64',
-      title: `Comment on ${params.title}`.slice(0, 55),
-      description: params.message.slice(0, 4000),
-    },
-    'Failed to update comment.'
+export const fetchComments = (
+  target: Target,
+  actor: Actor,
+  cursor = initialCommentCursor(),
+  options: ReadOptions = {}
+) =>
+  socialReadBudget(options, (bounded) =>
+    readCommentsPage(target, actor, cursor, bounded)
   );
-
-  return payload;
+export const publishComment = (
+  target: Target,
+  actor: Actor,
+  message: string,
+  parentId: string | undefined,
+  isCurrent: () => boolean
+) =>
+  sendSocial(
+    prepareSocial('comment', actor, target, {
+      message: message.trim(),
+      parentId,
+    }),
+    isCurrent
+  );
+export const changeComment = (
+  target: Target,
+  actor: Actor,
+  comment: MediaComment,
+  message: string,
+  deleted: boolean,
+  isCurrent: () => boolean
+) => {
+  if (
+    !sameTarget(comment, target) ||
+    comment.author.toLowerCase() !== actor.name.toLowerCase() ||
+    !comment.resourceId
+  )
+    throw new Error(
+      'Only the author can change this comment on its original page.'
+    );
+  return sendSocial(
+    prepareSocial('comment', actor, target, {
+      identifier: comment.resourceId,
+      message: message.trim(),
+      deleted,
+      parentId: comment.parentId,
+      created: comment.created,
+    }),
+    isCurrent
+  );
 };

@@ -1,29 +1,21 @@
 import {
+  MAX_AUTOMATIC_AUDIO_REUSE_BYTES,
+  readBoundedAudio,
+} from './boundedFile';
+import { enrichKnownSong, metadataRevision } from './songDescriptors';
+import {
+  findExactQdnResource,
   getQdnResourceProperties,
-  getQdnResourceStatus,
   getQdnResourceUrl,
-  type QdnResourceStatus,
-  searchQdnResources,
-  shouldTriggerQdnBuild,
-  shouldHideQdnResource,
 } from './qdn';
 import type { QdnSearchResource, SongSummary } from '../types/media';
 import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 import { parseSongMetadata } from '../utils/songMetadata';
+import { mediaKey, mergeMedia } from '../utils/mediaIdentity';
+import { readMediaPage, type MediaPageOptions } from './mediaPages';
+import { throwIfAborted, type ReadOptions } from './qdnRequests';
 
 const SONG_PREFIX = 'enjoymusic_song_';
-const URL_RETRY_COUNT = 2;
-const URL_RETRY_DELAY_MS = 800;
-const STREAM_RESOLVE_TIMEOUT_MS = 45_000;
-const STATUS_POLL_INTERVAL_MS = 1_500;
-const SONG_FETCH_BATCH_SIZE = 100;
-
-const descriptionCache = new Map<string, Record<string, string>>();
-
-const sleep = (ms: number) =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
 
 const inferAudioExtension = (contentType?: string) => {
   if (!contentType) return 'mp3';
@@ -61,18 +53,6 @@ const inferAudioMimeType = (filename?: string, fallbackType?: string) => {
   }
 };
 
-const decodeBase64ToBytes = (value: string) => {
-  const normalized = value.includes(',') ? value.split(',').pop() || '' : value;
-  const binary = window.atob(normalized);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-};
-
 const resolveAudioFilename = (
   identifier: string,
   resourceFilename?: string,
@@ -86,116 +66,16 @@ const resolveAudioFilename = (
   return `${identifier}.${inferAudioExtension(mimeType)}`;
 };
 
-const primeResourceUrlResolution = async (
-  service: 'AUDIO' | 'DOCUMENT',
-  publisher: string,
-  identifier: string
-) => {
-  await getQdnResourceProperties({
-    service,
-    name: publisher,
-    identifier,
-  });
-};
-
-const resolvePlayableResourceUrl = async (
-  service: 'AUDIO' | 'DOCUMENT',
-  publisher: string,
-  identifier: string
-) => {
-  await primeResourceUrlResolution(service, publisher, identifier);
-
-  return getQdnResourceUrl(service, publisher, identifier, {
-    retries: URL_RETRY_COUNT,
-    retryDelayMs: URL_RETRY_DELAY_MS,
-  });
-};
-
-const resolveStreamUrlForService = async (
-  service: 'AUDIO' | 'DOCUMENT',
-  publisher: string,
-  identifier: string,
-  onStatusChange?: (status: string, progress?: number) => void
-) => {
-  const startedAt = Date.now();
-  let buildTriggered = false;
-
-  while (Date.now() - startedAt <= STREAM_RESOLVE_TIMEOUT_MS) {
-    let latestStatus: QdnResourceStatus | null = null;
-
-    try {
-      latestStatus = await getQdnResourceStatus({
-        service,
-        name: publisher,
-        identifier,
-      });
-      onStatusChange?.(latestStatus.status, latestStatus.percentLoaded);
-
-      if (!buildTriggered && shouldTriggerQdnBuild(latestStatus.status)) {
-        buildTriggered = true;
-        latestStatus = await getQdnResourceStatus({
-          service,
-          name: publisher,
-          identifier,
-          build: true,
-        });
-        onStatusChange?.(latestStatus.status, latestStatus.percentLoaded);
-      }
-    } catch {
-      // Ignore transient status polling failures and keep trying URL resolution.
-    }
-
-    const nextUrl = await resolvePlayableResourceUrl(
-      service,
-      publisher,
-      identifier
-    );
-    if (nextUrl) {
-      return nextUrl;
-    }
-
-    const normalizedStatus = latestStatus?.status?.trim().toUpperCase() || '';
-    if (
-      normalizedStatus === 'UNSUPPORTED' ||
-      normalizedStatus === 'BLOCKED' ||
-      normalizedStatus === 'NOT_PUBLISHED' ||
-      normalizedStatus === 'MISSING_DATA'
-    ) {
-      return null;
-    }
-
-    await sleep(STATUS_POLL_INTERVAL_MS);
-  }
-
-  return null;
-};
-
-const parseDescriptionMap = (description: unknown, cacheKey?: string) => {
-  if (cacheKey && descriptionCache.has(cacheKey)) {
-    return descriptionCache.get(cacheKey) as Record<string, string>;
-  }
-
-  const parsed =
-    typeof description === 'string'
-      ? (parseSongMetadata(description) as Record<string, string>)
-      : {};
-
-  if (cacheKey) {
-    descriptionCache.set(cacheKey, parsed);
-  }
-
-  return parsed;
-};
-
 const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
   const identifier =
     typeof resource.identifier === 'string' ? resource.identifier : '';
   const publisher = typeof resource.name === 'string' ? resource.name : '';
   if (!identifier || !publisher) return null;
 
-  const parsedDescription = parseDescriptionMap(
-    resource.metadata?.description,
-    `${publisher}:${identifier}`
+  const parsedDescription = parseSongMetadata(
+    typeof resource.metadata?.description === 'string'
+      ? resource.metadata.description
+      : resource.description
   );
 
   const metadataTitle =
@@ -205,8 +85,8 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
   const resourceTitle =
     typeof resource.title === 'string' ? resource.title.trim() : '';
 
-  return {
-    id: identifier,
+  return enrichKnownSong({
+    id: mediaKey('AUDIO', publisher, identifier),
     identifier,
     publisher,
     title:
@@ -230,117 +110,53 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
     status: resource.status,
     service: 'AUDIO',
     mediaType: 'SONG',
-  };
-};
-
-const uniqueByIdentifier = (items: QdnSearchResource[]) => {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const identifier =
-      typeof item.identifier === 'string' ? item.identifier : '';
-    if (!identifier || seen.has(identifier)) {
-      return false;
-    }
-    seen.add(identifier);
-    return true;
+    metadataRevision: metadataRevision(
+      typeof resource.metadata?.description === 'string'
+        ? resource.metadata.description
+        : resource.description
+    ),
   });
 };
 
-const fetchSongsPage = async (options?: {
-  limit?: number;
-  offset?: number;
-  publisher?: string;
-}): Promise<SongSummary[]> => {
-  const limit = options?.limit ?? 24;
-  const offset = options?.offset ?? 0;
-  const publisher = options?.publisher?.trim();
-
-  const resources = await searchQdnResources({
-    mode: 'ALL',
-    service: 'AUDIO',
-    query: SONG_PREFIX,
-    ...(publisher ? { name: publisher, exactMatchNames: true } : {}),
-    limit,
-    offset,
-    reverse: true,
-    includeMetadata: true,
-    includeStatus: true,
-    excludeBlocked: true,
-  });
-
-  return uniqueByIdentifier(resources)
-    .filter((resource) => {
-      const identifier =
-        typeof resource.identifier === 'string' ? resource.identifier : '';
-      return (
-        identifier.startsWith(SONG_PREFIX) && !shouldHideQdnResource(resource)
-      );
-    })
-    .map(mapSongResource)
-    .filter((item): item is SongSummary => Boolean(item));
-};
-
-export const fetchSongs = fetchSongsPage;
-
-export const fetchAllSongs = async (options?: {
-  publisher?: string;
-}): Promise<SongSummary[]> => {
-  const allSongs: SongSummary[] = [];
+export const fetchSongsPage = (options: MediaPageOptions = {}) =>
+  readMediaPage('AUDIO', SONG_PREFIX, mapSongResource, options);
+export const fetchSongs = async (options: MediaPageOptions = {}) =>
+  (await fetchSongsPage(options)).items;
+export const fetchAllSongs = async (
+  options: MediaPageOptions & { onPage?: (songs: SongSummary[]) => void } = {}
+): Promise<SongSummary[]> => {
+  let allSongs: SongSummary[] = [];
   let offset = 0;
-
+  const before = options.before ?? Date.now() + 1;
   while (true) {
     const page = await fetchSongsPage({
-      limit: SONG_FETCH_BATCH_SIZE,
+      ...options,
+      before,
+      limit: 100,
       offset,
-      publisher: options?.publisher,
     });
-
-    if (!page.length) {
-      break;
-    }
-
-    allSongs.push(...page);
-
-    if (page.length < SONG_FETCH_BATCH_SIZE) {
-      break;
-    }
-
-    offset += SONG_FETCH_BATCH_SIZE;
+    throwIfAborted(options.signal);
+    allSongs = mergeMedia(allSongs, page.items);
+    options.onPage?.(allSongs);
+    if (!page.hasMore) return allSongs;
+    offset = page.nextOffset;
   }
-
-  return allSongs;
 };
-
-export const fetchSongsByPublisher = async (
+export const fetchSongsByPublisher = (
   publisher: string,
-  options?: { limit?: number; offset?: number }
-) => {
-  return fetchSongs({
-    ...options,
-    publisher,
-  });
-};
-
+  options: MediaPageOptions = {}
+) => fetchSongs({ ...options, publisher });
 export const fetchSongByIdentifier = async (
   publisher: string,
-  identifier: string
+  identifier: string,
+  options: ReadOptions = {}
 ): Promise<SongSummary | null> => {
-  const resources = await searchQdnResources({
-    mode: 'ALL',
-    service: 'AUDIO',
-    name: publisher,
+  const resource = await findExactQdnResource(
+    'AUDIO',
+    publisher,
     identifier,
-    query: identifier,
-    limit: 1,
-    offset: 0,
-    reverse: true,
-    includeMetadata: true,
-    includeStatus: true,
-    excludeBlocked: true,
-    exactMatchNames: true,
-  });
-
-  const resource = resources.find((entry) => !shouldHideQdnResource(entry));
+    options
+  );
   return resource ? mapSongResource(resource) : null;
 };
 
@@ -355,52 +171,27 @@ export const loadExistingSongAudioFile = async (params: {
   publisher: string;
   identifier: string;
   onStatusChange?: (status: string) => void;
+  signal?: AbortSignal;
 }) => {
   params.onStatusChange?.('Looking up the current QDN audio file...');
 
-  const properties = await getQdnResourceProperties({
-    name: params.publisher,
-    service: 'AUDIO',
-    identifier: params.identifier,
-  });
+  throwIfAborted(params.signal);
+  const properties = await getQdnResourceProperties(
+    { name: params.publisher, service: 'AUDIO', identifier: params.identifier },
+    { signal: params.signal }
+  );
+  if (
+    typeof properties?.size === 'number' &&
+    properties.size > MAX_AUTOMATIC_AUDIO_REUSE_BYTES
+  )
+    throw new Error(
+      'For audio larger than 64 MiB, select the original file from your device to save this edit.'
+    );
   const resourceFilename =
     (typeof properties?.filename === 'string' && properties.filename.trim()) ||
     (typeof properties?.fileName === 'string' && properties.fileName.trim()) ||
     (typeof properties?.name === 'string' && properties.name.trim()) ||
     undefined;
-
-  if (typeof qortalRequest === 'function') {
-    for (const service of ['AUDIO', 'DOCUMENT'] as const) {
-      try {
-        params.onStatusChange?.(
-          service === 'AUDIO'
-            ? 'Reusing the current QDN audio file...'
-            : 'Retrying with the alternate QDN resource source...'
-        );
-
-        const result = await qortalRequest({
-          action: 'FETCH_QDN_RESOURCE',
-          service,
-          name: params.publisher,
-          identifier: params.identifier,
-          encoding: 'base64',
-        } as never);
-
-        if (typeof result !== 'string' || !result.trim()) {
-          continue;
-        }
-
-        const mimeType = inferAudioMimeType(resourceFilename);
-        return new File(
-          [decodeBase64ToBytes(result)],
-          resolveAudioFilename(params.identifier, resourceFilename, mimeType),
-          { type: mimeType }
-        );
-      } catch {
-        // Fall through to the next recovery path.
-      }
-    }
-  }
 
   params.onStatusChange?.(
     'Waiting for the current QDN audio file to become available...'
@@ -409,6 +200,7 @@ export const loadExistingSongAudioFile = async (params: {
     params.publisher,
     params.identifier,
     {
+      signal: params.signal,
       waitUntilReady: true,
       onStatusChange: (resourceStatus, progress) => {
         params.onStatusChange?.(
@@ -429,14 +221,41 @@ export const loadExistingSongAudioFile = async (params: {
   params.onStatusChange?.(
     'Downloading the current QDN audio file for reuse...'
   );
-  const response = await fetch(streamUrl);
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  params.signal?.addEventListener('abort', abort, { once: true });
+  if (params.signal?.aborted) controller.abort();
+  const bytes = typeof properties?.size === 'number' ? properties.size : 0;
+  const timer = setTimeout(
+    () => controller.abort(),
+    Math.min(30 * 60_000, 60_000 + (bytes / (128 * 1024)) * 1000)
+  );
+  let response: Response;
+  try {
+    response = await fetch(streamUrl, {
+      signal: controller.signal,
+      cache: 'no-store',
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    params.signal?.removeEventListener('abort', abort);
+    throw error;
+  }
   if (!response.ok) {
+    clearTimeout(timer);
+    params.signal?.removeEventListener('abort', abort);
     throw new Error(
       'The current audio file could not be reused for this edit. Select a replacement audio file to save changes.'
     );
   }
 
-  const blob = await response.blob();
+  let blob: Blob;
+  try {
+    blob = await readBoundedAudio(response, controller.signal);
+  } finally {
+    clearTimeout(timer);
+    params.signal?.removeEventListener('abort', abort);
+  }
   const mimeType = inferAudioMimeType(resourceFilename, blob.type);
 
   return new File(
@@ -451,31 +270,17 @@ export const loadExistingSongAudioFile = async (params: {
 export const resolveSongStreamUrl = async (
   publisher: string,
   identifier: string,
-  options?: {
+  options: ReadOptions & {
     waitUntilReady?: boolean;
     onStatusChange?: (status: string, progress?: number) => void;
-  }
+  } = {}
 ): Promise<string | null> => {
-  if (options?.waitUntilReady) {
-    const audioUrl = await resolveStreamUrlForService(
-      'AUDIO',
-      publisher,
-      identifier,
-      options.onStatusChange
-    );
-    if (audioUrl) {
-      return audioUrl;
-    }
-
-    return resolveStreamUrlForService(
-      'DOCUMENT',
-      publisher,
-      identifier,
-      options.onStatusChange
-    );
-  }
-
-  const audioUrl = await getQdnResourceUrl('AUDIO', publisher, identifier);
-  if (audioUrl) return audioUrl;
-  return getQdnResourceUrl('DOCUMENT', publisher, identifier);
+  // Core's URL endpoint checks existence. The media request itself starts the
+  // download/build; properties/build preflight would unnecessarily block Play.
+  options.onStatusChange?.('Connecting');
+  return getQdnResourceUrl('AUDIO', publisher, identifier, {
+    ...options,
+    priority: 'playback',
+    retries: 1,
+  });
 };

@@ -19,6 +19,8 @@ const AUDIO_EXTENSION_BY_MIME: Record<string, string> = {
 const sanitizeFilenameSegment = (value: string) =>
   value
     .trim()
+    // Strip control characters from filesystem names as well as reserved punctuation.
+    // eslint-disable-next-line no-control-regex
     .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
     .replace(/\s+/g, ' ')
     .slice(0, 120);
@@ -33,7 +35,8 @@ const getFilenameExtension = (filename: string) => {
   return cleanName.slice(dotIndex + 1).toLowerCase();
 };
 
-const hasExtension = (filename: string) => Boolean(getFilenameExtension(filename));
+const hasExtension = (filename: string) =>
+  Boolean(getFilenameExtension(filename));
 
 const extractFilenameFromUrl = (resourceUrl: string) => {
   try {
@@ -103,40 +106,53 @@ export const downloadQdnAudioResource = async (params: {
   identifier: string;
   title: string;
   resourceUrl: string;
+  signal?: AbortSignal;
 }) => {
-  const properties = await getQdnResourceProperties({
-    name: params.publisher,
-    service: 'AUDIO',
-    identifier: params.identifier,
-  });
-
-  const response = await fetch(params.resourceUrl);
-  if (!response.ok) {
-    throw new Error(`Audio download failed with status ${response.status}.`);
+  const controller = new AbortController(),
+    abort = () => controller.abort();
+  params.signal?.addEventListener('abort', abort, { once: true });
+  if (params.signal?.aborted) controller.abort();
+  const timer = setTimeout(abort, 8000);
+  let properties: Record<string, unknown> | null = null;
+  try {
+    properties = await getQdnResourceProperties(
+      {
+        name: params.publisher,
+        service: 'AUDIO',
+        identifier: params.identifier,
+      },
+      { signal: controller.signal, priority: 'background' }
+    );
+  } catch {
+    /* Missing optional filename information must not buffer the audio. */
+  } finally {
+    clearTimeout(timer);
+    params.signal?.removeEventListener('abort', abort);
   }
-
-  const blob = await response.blob();
-  const downloadUrl = window.URL.createObjectURL(blob);
-  const mimeType = blob.type || response.headers.get('content-type') || '';
+  if (params.signal?.aborted)
+    throw new DOMException('Download cancelled.', 'AbortError');
+  const url = new URL(params.resourceUrl, window.location.href);
+  if (!['http:', 'https:'].includes(url.protocol))
+    throw new Error('The audio download URL is invalid.');
   const filename = buildDownloadFilename({
-    title: params.title,
-    identifier: params.identifier,
-    resourceUrl: params.resourceUrl,
+    ...params,
     properties,
-    mimeType,
+    mimeType: pickFirstString(properties, ['mimeType', 'mimetype', 'type']),
   });
-
+  // Core's attachment endpoint sets Content-Disposition. The browser/Hub streams
+  // it to its download handler; Q-Music never fetches or retains the full audio.
+  url.searchParams.delete('async');
+  url.searchParams.set('attachment', 'true');
+  if (filename && hasExtension(filename))
+    url.searchParams.set('attachmentFilename', filename);
   const anchor = document.createElement('a');
-  anchor.href = downloadUrl;
-  anchor.download = hasExtension(filename) ? filename : `${filename}.audio`;
-  anchor.rel = 'noopener';
+  anchor.href = url.href;
+  anchor.download = filename;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
   anchor.style.display = 'none';
   document.body.appendChild(anchor);
   anchor.click();
-  document.body.removeChild(anchor);
-  window.setTimeout(() => {
-    window.URL.revokeObjectURL(downloadUrl);
-  }, 1_000);
-
-  return anchor.download;
+  anchor.remove();
+  return filename;
 };

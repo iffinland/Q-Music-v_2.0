@@ -1,5 +1,5 @@
 import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
-import { useGlobal } from 'qapp-core';
+import { useGlobal } from '../qortal';
 import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { PageHero } from '../components/common/PageHero';
@@ -32,15 +32,15 @@ const resolveSongTitle = (song: { title?: string; identifier: string }) =>
 export const EditPlaylistPage = () => {
   const { auth } = useGlobal();
   const { identifier } = useParams();
-  const decodedIdentifier = identifier
-    ? decodeURIComponent(identifier)
-    : undefined;
+  const decodedIdentifier = identifier ? identifier : undefined;
   const publisher = auth?.name?.trim();
   const { playlist, isLoading, error } = usePlaylistDetail(
     publisher,
     decodedIdentifier
   );
-  const { songs } = useSongsFeed(100);
+  const [songLimit, setSongLimit] = useState(100);
+  const songFeed = useSongsFeed(songLimit);
+  const { songs } = songFeed;
   const { publishPlaylist } = useMediaPublish();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -158,10 +158,8 @@ export const EditPlaylistPage = () => {
         coverFile,
         existingIdentifier: playlist.identifier,
       });
-      setStatus(
-        `Published successfully. Playlist updates are now live as ${result.identifier}.`
-      );
-      setCoverFile(null);
+      setStatus(`${result.title}: ${result.outcome.message}`);
+      if (result.outcome.complete) setCoverFile(null);
       emitMediaRefresh();
     } catch (publishError) {
       setSaveError(
@@ -181,6 +179,20 @@ export const EditPlaylistPage = () => {
         title={playlist ? `Edit ${playlist.title}` : 'Edit playlist'}
         description="Update playlist metadata, track membership and order, then republish on the same identifier."
       />
+      <Button
+        disabled={songFeed.isLoading || !songFeed.hasMore || isSaving}
+        onClick={() => setSongLimit((value) => value + 100)}
+      >
+        Load more songs for selection
+      </Button>
+      {songFeed.error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={songFeed.retry}>Retry songs</Button>}
+        >
+          {songFeed.error}
+        </Alert>
+      ) : null}
       {!publisher ? (
         <Alert severity="warning">
           Log in through Qortal before editing a playlist.
@@ -188,7 +200,7 @@ export const EditPlaylistPage = () => {
       ) : null}
       {error ? <Alert severity="warning">{error}</Alert> : null}
       {saveError ? <Alert severity="error">{saveError}</Alert> : null}
-      {status ? <Alert severity="success">{status}</Alert> : null}
+      {status ? <Alert severity="info">{status}</Alert> : null}
       {isLoading ? (
         <Typography variant="body2">Loading playlist editor...</Typography>
       ) : playlist ? (

@@ -1,3 +1,6 @@
+import { sanitizedContent } from '../../qortal/content';
+import { refreshAccount } from '../../qortal';
+import { appVersion } from '../../qapp-config';
 import {
   DarkModeRounded,
   LightModeRounded,
@@ -27,12 +30,11 @@ import {
 } from '@mui/material';
 import { keyframes } from '@mui/system';
 import {
-  sanitizedContent,
   showError,
   showSuccess,
   useGlobal,
   useQortBalance,
-} from 'qapp-core';
+} from '../../qortal';
 import {
   useEffect,
   useRef,
@@ -44,7 +46,7 @@ import {
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAtom } from 'jotai';
 import { useIframe } from '../../hooks/useIframeListener';
-import { librarySyncStateAtom } from '../../state/library';
+import { useLibrary } from '../../hooks/useLibrary';
 import { queueLengthAtom } from '../../state/player';
 import { EnumTheme, themeAtom } from '../../state/global/system';
 import {
@@ -189,14 +191,13 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   const handleOpenSupport = async () => {
     setSupportOpen(true);
 
-    if (qortBalance === null) {
-      try {
-        await getBalance();
-      } catch {
-        // The dialog can still open even if balance refresh fails.
-      }
+    try {
+      await getBalance();
+    } catch {
+      /* Keep support usable if the read fails. */
     }
   };
+
   const handleCloseSupport = () => {
     if (isSendingSupport) {
       return;
@@ -301,7 +302,7 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
   };
 
   const formattedBalance =
-    typeof qortBalance === 'number' ? qortBalance.toFixed(8) : '0.00000000';
+    typeof qortBalance === 'number' ? qortBalance.toFixed(8) : '—';
 
   return (
     <Box
@@ -622,7 +623,7 @@ export const AppShell = ({ children }: AppShellProps) => {
   useIframe();
   const { auth } = useGlobal();
   const queueLength = useAtom(queueLengthAtom)[0];
-  const librarySyncState = useAtom(librarySyncStateAtom)[0];
+  const { syncState: librarySyncState, pending: libraryPending } = useLibrary();
   const [theme, setTheme] = useAtom(themeAtom);
   const [mobileOpen, setMobileOpen] = useState(false);
   const isLightTheme = theme === EnumTheme.LIGHT;
@@ -644,7 +645,9 @@ export const AppShell = ({ children }: AppShellProps) => {
           borderColor: 'divider',
         }}
       >
-        <Toolbar sx={{ gap: 1.5 }}>
+        <Toolbar
+          sx={{ gap: { xs: 1, sm: 1.5 }, px: { xs: 1.5, sm: 3 }, minWidth: 0 }}
+        >
           <IconButton
             color="inherit"
             edge="start"
@@ -668,7 +671,8 @@ export const AppShell = ({ children }: AppShellProps) => {
               alt="Q-Music logo"
               sx={{
                 height: 34,
-                width: 'auto',
+                width: { xs: 70, sm: 'auto' },
+                objectFit: 'contain',
                 flexShrink: 0,
               }}
             />
@@ -677,6 +681,7 @@ export const AppShell = ({ children }: AppShellProps) => {
                 component="div"
                 sx={{
                   fontSize: '1.35rem',
+                  display: { xs: 'none', sm: 'block' },
                   fontWeight: 800,
                   lineHeight: 1,
                   letterSpacing: '0.01em',
@@ -695,7 +700,14 @@ export const AppShell = ({ children }: AppShellProps) => {
                   textOverflow: 'ellipsis',
                 }}
               >
-                Enjoy &amp; Share music with the Qortal community
+                v{appVersion}
+                <Box
+                  component="span"
+                  sx={{ display: { xs: 'none', md: 'inline' } }}
+                >
+                  {' '}
+                  • Enjoy &amp; Share music with the Qortal community
+                </Box>
               </Typography>
             </Box>
           </Box>
@@ -703,6 +715,7 @@ export const AppShell = ({ children }: AppShellProps) => {
             <Chip
               icon={<QueueMusicRounded />}
               label={`Queue ${queueLength}`}
+              sx={{ display: { xs: 'none', md: 'inline-flex' } }}
               variant="outlined"
             />
             {auth?.name ? (
@@ -714,14 +727,38 @@ export const AppShell = ({ children }: AppShellProps) => {
                       ? 'Library loading'
                       : librarySyncState === 'error'
                         ? 'Library offline'
-                        : 'Library ready'
+                        : librarySyncState === 'sent'
+                          ? 'Library sent'
+                          : librarySyncState === 'uncertain'
+                            ? 'Library needs checking'
+                            : libraryPending
+                              ? 'Library saved locally'
+                              : 'Library ready'
                 }
+                sx={{ display: { xs: 'none', md: 'inline-flex' } }}
                 color={librarySyncState === 'error' ? 'warning' : 'default'}
                 variant="outlined"
               />
             ) : null}
             <Chip
-              label={auth?.name ? `@${auth.name}` : 'Guest mode'}
+              label={
+                auth?.isLoadingUser
+                  ? 'Checking account…'
+                  : auth?.name
+                    ? `@${auth.name}`
+                    : auth?.address
+                      ? 'Wallet connected'
+                      : 'Guest mode'
+              }
+              onClick={() => void refreshAccount()}
+              title="Refresh Qortal account"
+              sx={{
+                maxWidth: { xs: 100, sm: 180 },
+                '& .MuiChip-label': {
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                },
+              }}
               color="primary"
               variant="outlined"
             />
@@ -779,11 +816,23 @@ export const AppShell = ({ children }: AppShellProps) => {
           maxWidth={false}
           sx={{
             flexGrow: 1,
+            minWidth: 0,
+            overflowWrap: 'anywhere',
             px: { xs: 2, md: 4 },
             py: { xs: 3, md: 4 },
             pb: 18,
           }}
         >
+          {auth.errorMessageLoadingUser ? (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="warning.main">
+                {auth.errorMessageLoadingUser}
+              </Typography>
+              <Button size="small" onClick={() => void refreshAccount()}>
+                Refresh account
+              </Button>
+            </Box>
+          ) : null}
           {children}
         </Container>
       </Box>

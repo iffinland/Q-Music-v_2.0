@@ -1,12 +1,14 @@
 export const formatPlaylistTrackCount = (
-  songCount?: number,
+  songCount?: number | null,
   options?: { isLoading?: boolean }
 ) => {
   if (options?.isLoading) {
     return 'Tracks loading...';
   }
 
-  return `${songCount ?? 0} tracks`;
+  return typeof songCount === 'number'
+    ? `${songCount} tracks`
+    : 'Open playlist for tracks';
 };
 
 export const formatPlaylistCardMetadata = (params: {
@@ -14,7 +16,7 @@ export const formatPlaylistCardMetadata = (params: {
   publisher: string;
   description?: string;
   publishedDate?: string;
-  songCount?: number;
+  songCount?: number | null;
   isTrackCountLoading?: boolean;
 }) => {
   const lines = [

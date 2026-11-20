@@ -1,31 +1,43 @@
-import {
-  objectToBase64,
-  useAllResourceStatus,
-  useGlobal,
-  usePublish,
-} from 'qapp-core';
-import { searchQdnResources } from '../services/qdn';
+import { throwIfAborted } from '../services/qdnRequests';
+import { useGlobal } from '../qortal';
+import { useRef } from 'react';
 import type { PlaylistSongReference, SongSummary } from '../types/media';
-import { encodeSongMetadataValue } from '../utils/songMetadata';
 import {
-  COVER_SIZE,
-  MAX_AUDIO_FILE_SIZE,
-  MAX_COVER_FILE_SIZE,
-  MAX_CROP_ZOOM,
-  MIN_CROP_ZOOM,
-} from '../utils/publishLimits';
-
-type ResourceToPublish = Parameters<
-  ReturnType<typeof usePublish>['publishMultipleResources']
->[0][number];
+  assertCanStartJob,
+  createPublishJob,
+  runPublishJob,
+} from '../services/publishing/engine';
+import type { PublishResource } from '../services/publishing/types';
+import {
+  hashBlob,
+  jsonBase64,
+  utf8Bytes,
+  limitUtf8,
+  randomPublishId,
+} from '../services/publishing/content';
+import {
+  audioMime,
+  getPublishNodeLimit,
+  validateAudio,
+  validateCover,
+} from '../services/publishing/limits';
+import { processCoverImage } from '../services/publishing/covers';
+import {
+  compactSongDescription,
+  encodeFullSongDescription,
+  indexedSongTitle,
+  songMetadataIdentifier,
+  type SongDocument,
+} from '../services/songDescriptors';
+import { MAX_SONG_METADATA_BYTES } from '../utils/publishLimits';
 
 export interface CoverCropSettings {
   zoom: number;
   offsetX: number;
   offsetY: number;
 }
-
 export interface PublishSongInput {
+  signal?: AbortSignal;
   title: string;
   artist: string;
   album?: string;
@@ -39,7 +51,6 @@ export interface PublishSongInput {
   coverCrop?: CoverCropSettings;
   existingIdentifier?: string;
 }
-
 export interface PublishPlaylistInput {
   title: string;
   description?: string;
@@ -49,7 +60,6 @@ export interface PublishPlaylistInput {
   coverCrop?: CoverCropSettings;
   existingIdentifier?: string;
 }
-
 export interface PreparedSongPublish {
   identifier: string;
   publisher: string;
@@ -60,10 +70,10 @@ export interface PreparedSongPublish {
   audioFile: File;
   coverFile?: File | null;
   coverCrop?: CoverCropSettings;
-  audioResource: ResourceToPublish;
-  thumbnailResource?: ResourceToPublish;
+  audioResource: PublishResource;
+  metadataResource: PublishResource;
+  thumbnailResource?: PublishResource;
 }
-
 export interface PreparedPlaylistPublish {
   identifier: string;
   publisher: string;
@@ -73,192 +83,17 @@ export interface PreparedPlaylistPublish {
   publishedDate?: string;
   coverFile?: File | null;
   coverCrop?: CoverCropSettings;
-  playlistResource: ResourceToPublish;
-  thumbnailResource?: ResourceToPublish;
+  playlistResource: PublishResource;
+  thumbnailResource?: PublishResource;
 }
-
-const sanitizeText = (value: string) => value.trim().replace(/\s+/g, ' ');
-const PUBLISH_VERIFICATION_WINDOW_MS = 45_000;
-const PUBLISH_VERIFICATION_POLL_MS = 2_000;
-
-const sanitizeTitleForIdentifier = (value: string) =>
-  sanitizeText(value)
+const text = (value: string) => value.trim().replace(/\s+/g, ' ');
+const segment = (title: string) =>
+  text(title)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-
-const buildShortId = () => {
-  if (
-    typeof crypto !== 'undefined' &&
-    typeof crypto.randomUUID === 'function'
-  ) {
-    return crypto.randomUUID().replace(/-/g, '').slice(0, 8);
-  }
-  return Math.random().toString(36).slice(2, 10);
-};
-
-const wait = (ms: number) =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
-
-const verifyResourcePublished = async (params: {
-  service: 'AUDIO' | 'PLAYLIST';
-  publisher: string;
-  identifier: string;
-  baselineTimestamp?: number | null;
-}) => {
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    const resources = await searchQdnResources({
-      mode: 'ALL',
-      service: params.service,
-      name: params.publisher,
-      identifier: params.identifier,
-      query: params.identifier,
-      limit: 1,
-      offset: 0,
-      reverse: true,
-      includeMetadata: false,
-      includeStatus: true,
-      excludeBlocked: true,
-      exactMatchNames: true,
-    });
-
-    const found = resources.some((resource) => {
-      if (
-        resource.identifier !== params.identifier ||
-        resource.name !== params.publisher
-      ) {
-        return false;
-      }
-
-      const resourceTimestamp =
-        typeof resource.updated === 'number'
-          ? resource.updated
-          : typeof resource.created === 'number'
-            ? resource.created
-            : 0;
-
-      if (params.baselineTimestamp == null) {
-        return true;
-      }
-
-      return resourceTimestamp > params.baselineTimestamp;
-    });
-
-    if (found) {
-      return true;
-    }
-
-    await wait(1_500);
-  }
-
-  return false;
-};
-
-const loadImageFromFile = async (file: File): Promise<HTMLImageElement> => {
-  const objectUrl = URL.createObjectURL(file);
-
-  try {
-    const image = new Image();
-    image.decoding = 'async';
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error('Image could not be processed.'));
-      image.src = objectUrl;
-    });
-    return image;
-  } finally {
-    URL.revokeObjectURL(objectUrl);
-  }
-};
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-
-const processCoverImage = async (
-  file: File,
-  crop?: CoverCropSettings
-): Promise<string> => {
-  const image = await loadImageFromFile(file);
-  const canvas = document.createElement('canvas');
-  canvas.width = COVER_SIZE;
-  canvas.height = COVER_SIZE;
-  const context = canvas.getContext('2d');
-
-  if (!context) {
-    throw new Error('Image processing is not available.');
-  }
-
-  const zoom = clamp(crop?.zoom ?? 1, MIN_CROP_ZOOM, MAX_CROP_ZOOM);
-  const sourceSize = Math.max(1, Math.min(image.width, image.height) / zoom);
-  const maxSourceX = Math.max(0, image.width - sourceSize);
-  const maxSourceY = Math.max(0, image.height - sourceSize);
-  const sourceX = clamp(
-    maxSourceX / 2 + (crop?.offsetX ?? 0) * (maxSourceX / 2),
-    0,
-    maxSourceX
-  );
-  const sourceY = clamp(
-    maxSourceY / 2 + (crop?.offsetY ?? 0) * (maxSourceY / 2),
-    0,
-    maxSourceY
-  );
-
-  context.drawImage(
-    image,
-    sourceX,
-    sourceY,
-    sourceSize,
-    sourceSize,
-    0,
-    0,
-    COVER_SIZE,
-    COVER_SIZE
-  );
-
-  return canvas.toDataURL('image/jpeg', 0.9).split(',')[1];
-};
-
-const validateAudioFile = (file: File) => {
-  if (!file.type.startsWith('audio/')) {
-    throw new Error('Selected file is not a supported audio file.');
-  }
-
-  if (file.size > MAX_AUDIO_FILE_SIZE) {
-    throw new Error('Audio file is too large. Keep it below 2 GB.');
-  }
-};
-
-const validateCoverFile = (file: File) => {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Cover file must be an image.');
-  }
-
-  if (file.size > MAX_COVER_FILE_SIZE) {
-    throw new Error('Cover image is too large. Keep it below 12 MB.');
-  }
-};
-
-const buildSongDescription = (
-  input: Omit<PublishSongInput, 'audioFile' | 'coverFile'>
-) => {
-  const entries = [
-    ['title', sanitizeText(input.title)],
-    ['author', sanitizeText(input.artist)],
-    ['album', sanitizeText(input.album || '')],
-    ['genre', sanitizeText(input.genre || '')],
-    ['mood', sanitizeText(input.mood || '')],
-    ['language', sanitizeText(input.language || '')],
-    ['notes', sanitizeText(input.notes || '')],
-    ['publishedDate', sanitizeText(input.publishedDate || '')],
-  ].filter(([, value]) => value.length > 0);
-
-  return entries
-    .map(([key, value]) => `${key}=${encodeSongMetadataValue(value)}`)
-    .join(';');
-};
-
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 20) || 'audio';
+const id = () => randomPublishId().slice(0, 16);
 export const mapSongToPlaylistReference = (
   song: SongSummary
 ): PlaylistSongReference => ({
@@ -267,286 +102,182 @@ export const mapSongToPlaylistReference = (
   title: song.title,
   artist: song.artist,
 });
-
 export const useMediaPublish = () => {
   const { auth } = useGlobal();
-  const { publishMultipleResources } = usePublish();
-  const resourceStatuses = useAllResourceStatus();
-
+  const limitPromise = useRef<Promise<number> | null>(null);
   const ensurePublisher = () => {
     const publisher = auth?.name?.trim();
-    if (!publisher) {
-      throw new Error('You must be logged in to publish.');
-    }
+    if (!publisher) throw new Error('Log in through Qortal before publishing.');
+    assertCanStartJob(publisher);
     return publisher;
   };
-
-  const publishWithVerification = async (params: {
-    resources: ResourceToPublish[];
-    verifyService: 'AUDIO' | 'PLAYLIST';
-    publisher: string;
-    identifier: string;
-  }) => {
-    const baselineResource = await searchQdnResources({
-      mode: 'ALL',
-      service: params.verifyService,
-      name: params.publisher,
-      identifier: params.identifier,
-      query: params.identifier,
-      limit: 1,
-      offset: 0,
-      reverse: true,
-      includeMetadata: false,
-      includeStatus: true,
-      excludeBlocked: true,
-      exactMatchNames: true,
-    });
-    const baselineTimestamp =
-      typeof baselineResource[0]?.updated === 'number'
-        ? baselineResource[0].updated
-        : typeof baselineResource[0]?.created === 'number'
-          ? baselineResource[0].created
-          : null;
-
-    const publishPromise = publishMultipleResources(params.resources)
-      .then((result) => {
-        if (result instanceof Error) {
-          throw result;
-        }
-
-        return result;
-      })
-      .catch((error) => {
-        throw error;
-      });
-
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt <= PUBLISH_VERIFICATION_WINDOW_MS) {
-      const outcome = await Promise.race([
-        publishPromise.then(
-          (result) => ({
-            type: 'result' as const,
-            result,
-          }),
-          (error) => ({
-            type: 'error' as const,
-            error,
-          })
-        ),
-        wait(PUBLISH_VERIFICATION_POLL_MS).then(() => ({
-          type: 'tick' as const,
-        })),
-      ]);
-
-      if (outcome.type === 'result') {
-        return outcome.result;
-      }
-
-      if (outcome.type === 'error') {
-        const wasPublished = await verifyResourcePublished({
-          service: params.verifyService,
-          publisher: params.publisher,
-          identifier: params.identifier,
-          baselineTimestamp,
-        });
-
-        if (wasPublished) {
-          return [];
-        }
-
-        throw outcome.error;
-      }
-
-      const wasPublished = await verifyResourcePublished({
-        service: params.verifyService,
-        publisher: params.publisher,
-        identifier: params.identifier,
-        baselineTimestamp,
-      });
-
-      if (wasPublished) {
-        return [];
-      }
-    }
-
-    try {
-      return await publishPromise;
-    } catch (error) {
-      const wasPublished = await verifyResourcePublished({
-        service: params.verifyService,
-        publisher: params.publisher,
-        identifier: params.identifier,
-        baselineTimestamp,
-      });
-
-      if (wasPublished) {
-        return [];
-      }
-
-      throw error;
-    }
-  };
-
-  const buildSongPublish = async (input: PublishSongInput) => {
-    const publisher = ensurePublisher();
-    const title = sanitizeText(input.title);
-    const artist = sanitizeText(input.artist);
-
-    if (!title || !artist) {
-      throw new Error('Title and artist are required.');
-    }
-
-    validateAudioFile(input.audioFile);
-    if (input.coverFile) {
-      validateCoverFile(input.coverFile);
-    }
-
-    const uniqueId = buildShortId();
-    const identifierSegment =
-      sanitizeTitleForIdentifier(title).slice(0, 20) || `song_${uniqueId}`;
+  const buildSongPublish = async (
+    input: PublishSongInput
+  ): Promise<PreparedSongPublish> => {
+    const publisher = ensurePublisher(),
+      title = text(input.title),
+      artist = text(input.artist);
+    if (!title || !artist) throw new Error('Title and artist are required.');
+    if (!limitPromise.current) limitPromise.current = getPublishNodeLimit();
+    validateAudio(input.audioFile, await limitPromise.current);
+    if (input.coverFile) validateCover(input.coverFile);
     const identifier =
       input.existingIdentifier ||
-      `enjoymusic_song_${identifierSegment}_${uniqueId}`;
-    const description = buildSongDescription({
+      `enjoymusic_song_${segment(title)}_${id().slice(0, 8)}`;
+    const revision = id();
+    const fields = {
       title,
-      artist,
-      album: input.album,
-      genre: input.genre,
-      mood: input.mood,
-      language: input.language,
-      notes: input.notes,
-      publishedDate: input.publishedDate,
-    });
-    const extension = input.audioFile.name.split('.').pop() || 'audio';
-    const filename = `${identifierSegment}.${extension}`;
-
-    const audioResource: ResourceToPublish = {
+      author: artist,
+      album: text(input.album || ''),
+      genre: text(input.genre || ''),
+      mood: text(input.mood || ''),
+      language: text(input.language || ''),
+      notes: input.notes?.trim() || '',
+      publishedDate: text(input.publishedDate || ''),
+    };
+    if (
+      utf8Bytes(JSON.stringify(fields)).length >
+      MAX_SONG_METADATA_BYTES - 4096
+    )
+      throw new Error(
+        'Song details are too long. Shorten the notes before publishing.'
+      );
+    const filename = `${segment(title)}.${input.audioFile.name.split('.').pop()?.toLowerCase() || 'audio'}`;
+    const document: SongDocument = {
+      schema: 'qmusic.song.v2',
+      publisher,
+      identifier,
+      revision,
+      fields,
+      audio: {
+        sha256: await hashBlob(input.audioFile, input.signal),
+        bytes: input.audioFile.size,
+        filename,
+        mimeType: input.audioFile.type || audioMime(input.audioFile.name),
+      },
+    };
+    if (utf8Bytes(JSON.stringify(document)).length > MAX_SONG_METADATA_BYTES)
+      throw new Error(
+        'Song details exceed 256 KiB. Shorten the notes before publishing.'
+      );
+    const audioResource: PublishResource = {
       name: publisher,
       service: 'AUDIO',
       identifier,
-      title,
-      description,
+      title: indexedSongTitle(title),
+      description: compactSongDescription(fields, revision),
       file: input.audioFile,
       filename,
+      stage: 0,
     };
-
-    const thumbnailResource = input.coverFile
-      ? ({
+    const metadataResource: PublishResource = {
+      name: publisher,
+      service: 'DOCUMENT',
+      identifier: songMetadataIdentifier(identifier),
+      title: 'Q-Music song details',
+      description: `Full metadata for ${identifier}`,
+      data64: jsonBase64(document),
+      stage: 1,
+    };
+    const thumbnailResource: PublishResource | undefined = input.coverFile
+      ? {
           name: publisher,
           service: 'THUMBNAIL',
           identifier,
           data64: await processCoverImage(input.coverFile, input.coverCrop),
-        } as ResourceToPublish)
+          stage: 2,
+        }
       : undefined;
-
     return {
       identifier,
       publisher,
       title,
       artist,
-      album: sanitizeText(input.album || '') || undefined,
-      description,
+      album: fields.album || undefined,
+      description: encodeFullSongDescription(fields),
       audioFile: input.audioFile,
       coverFile: input.coverFile,
       coverCrop: input.coverCrop,
       audioResource,
+      metadataResource,
       thumbnailResource,
-    } satisfies PreparedSongPublish;
+    };
   };
-
-  const buildPlaylistPublish = async (input: PublishPlaylistInput) => {
-    const publisher = ensurePublisher();
-    const title = sanitizeText(input.title);
-    const description = sanitizeText(input.description || '');
-    const publishedDate = sanitizeText(input.publishedDate || '');
-
-    if (!title) {
-      throw new Error('Playlist title is required.');
-    }
-
-    if (!input.songs.length) {
-      throw new Error('Playlist must include at least one song.');
-    }
-
-    if (input.coverFile) {
-      validateCoverFile(input.coverFile);
-    }
-
-    const uniqueId = buildShortId();
-    const identifierSegment =
-      sanitizeTitleForIdentifier(title).slice(0, 20) || `playlist_${uniqueId}`;
+  const buildPlaylistPublish = async (
+    input: PublishPlaylistInput
+  ): Promise<PreparedPlaylistPublish> => {
+    const publisher = ensurePublisher(),
+      title = text(input.title),
+      description = input.description?.trim() || '';
+    if (!title || !input.songs.length)
+      throw new Error('A playlist needs a title and at least one song.');
+    if (input.songs.some((song) => !song.publisher || !song.identifier))
+      throw new Error('A playlist song reference is invalid.');
     const identifier =
       input.existingIdentifier ||
-      `enjoymusic_playlist_${identifierSegment}_${uniqueId}`;
-
+      `enjoymusic_playlist_${segment(title)}_${id().slice(0, 8)}`;
     const payload = {
       title,
       description,
-      publishedDate: publishedDate || undefined,
+      publishedDate: input.publishedDate || undefined,
       songs: input.songs,
     };
-
-    const playlistResource: ResourceToPublish = {
+    if (utf8Bytes(JSON.stringify(payload)).length > 1024 * 1024)
+      throw new Error(
+        'Split this playlist into smaller playlists (maximum 1 MiB of playlist details).'
+      );
+    const playlistResource: PublishResource = {
       name: publisher,
       service: 'PLAYLIST',
       identifier,
-      title,
-      description,
-      data64: await objectToBase64(payload),
+      title: indexedSongTitle(title),
+      description: limitUtf8(description, 240),
+      data64: jsonBase64(payload),
+      stage: 3,
     };
-
-    const thumbnailResource = input.coverFile
-      ? ({
+    const thumbnailResource: PublishResource | undefined = input.coverFile
+      ? {
           name: publisher,
           service: 'THUMBNAIL',
           identifier,
           data64: await processCoverImage(input.coverFile, input.coverCrop),
-        } as ResourceToPublish)
+          stage: 4,
+        }
       : undefined;
-
     return {
       identifier,
       publisher,
       title,
       description,
       songs: input.songs,
-      publishedDate: publishedDate || undefined,
+      publishedDate: input.publishedDate,
       coverFile: input.coverFile,
       coverCrop: input.coverCrop,
       playlistResource,
       thumbnailResource,
-    } satisfies PreparedPlaylistPublish;
+    };
   };
-
-  const publishResourceBatch = async (resources: ResourceToPublish[]) => {
-    if (!resources.length) {
-      return [];
-    }
-
-    const result = await publishMultipleResources(resources);
-    if (result instanceof Error) {
-      throw result;
-    }
-
-    return result;
+  const publishResourceBatch = async (
+    resources: PublishResource[],
+    title = 'Q-Music publish'
+  ) => {
+    ensurePublisher();
+    const job = await createPublishJob(title, resources);
+    return runPublishJob(job.id);
   };
-
   const publishSong = async (input: PublishSongInput) => {
+    throwIfAborted(input.signal);
     const prepared = await buildSongPublish(input);
-    const resources: ResourceToPublish[] = [prepared.audioResource];
-
-    if (prepared.thumbnailResource) {
-      resources.push(prepared.thumbnailResource);
-    }
-
-    await publishWithVerification({
+    throwIfAborted(input.signal);
+    const resources = [
+      prepared.audioResource,
+      prepared.metadataResource,
+      ...(prepared.thumbnailResource ? [prepared.thumbnailResource] : []),
+    ];
+    const outcome = await publishResourceBatch(
       resources,
-      verifyService: 'AUDIO',
-      publisher: prepared.publisher,
-      identifier: prepared.identifier,
-    });
-
+      `Song: ${prepared.title}`
+    );
     return {
       identifier: prepared.identifier,
       publisher: prepared.publisher,
@@ -554,99 +285,32 @@ export const useMediaPublish = () => {
       artist: prepared.artist,
       album: prepared.album,
       description: prepared.description,
+      outcome,
     };
   };
-
   const publishPlaylist = async (input: PublishPlaylistInput) => {
     const prepared = await buildPlaylistPublish(input);
-    const resources: ResourceToPublish[] = [prepared.playlistResource];
-
-    if (prepared.thumbnailResource) {
-      resources.push(prepared.thumbnailResource);
-    }
-
-    await publishWithVerification({
-      resources,
-      verifyService: 'PLAYLIST',
-      publisher: prepared.publisher,
-      identifier: prepared.identifier,
-    });
-
+    const outcome = await publishResourceBatch(
+      [
+        prepared.playlistResource,
+        ...(prepared.thumbnailResource ? [prepared.thumbnailResource] : []),
+      ],
+      `Playlist: ${prepared.title}`
+    );
     return {
       identifier: prepared.identifier,
       publisher: prepared.publisher,
       title: prepared.title,
       description: prepared.description,
       songs: prepared.songs,
+      outcome,
     };
   };
-
-  const publishSongAudioBatch = async (songs: PreparedSongPublish[]) => {
-    await publishResourceBatch(songs.map((song) => song.audioResource));
-    return songs.map((song) => ({
-      identifier: song.identifier,
-      publisher: song.publisher,
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      description: song.description,
-    }));
-  };
-
-  const publishSongThumbnailBatch = async (songs: PreparedSongPublish[]) => {
-    const resources = songs
-      .map((song) => song.thumbnailResource)
-      .filter((item): item is ResourceToPublish => Boolean(item));
-
-    await publishResourceBatch(resources);
-    return resources.length;
-  };
-
-  const publishPlaylistResourceBatch = async (
-    playlist: PreparedPlaylistPublish
-  ) => {
-    await publishResourceBatch([playlist.playlistResource]);
-    return {
-      identifier: playlist.identifier,
-      publisher: playlist.publisher,
-      title: playlist.title,
-      description: playlist.description,
-      songs: playlist.songs,
-    };
-  };
-
-  const publishPlaylistThumbnailBatch = async (
-    playlist: PreparedPlaylistPublish
-  ) => {
-    if (!playlist.thumbnailResource) {
-      return 0;
-    }
-
-    await publishResourceBatch([playlist.thumbnailResource]);
-    return 1;
-  };
-
-  const getBatchStatuses = (identifiers: string[]) => {
-    if (!identifiers.length) {
-      return [];
-    }
-
-    const identifierSet = new Set(identifiers);
-    return resourceStatuses.filter((status) =>
-      identifierSet.has(status.metadata.identifier)
-    );
-  };
-
   return {
     publisher: auth?.name || null,
     buildSongPublish,
     buildPlaylistPublish,
     publishResourceBatch,
-    publishSongAudioBatch,
-    publishSongThumbnailBatch,
-    publishPlaylistResourceBatch,
-    publishPlaylistThumbnailBatch,
-    getBatchStatuses,
     publishSong,
     publishPlaylist,
   };

@@ -1,3 +1,4 @@
+import { request } from '../qortal/store';
 type NameDataResponse = {
   owner?: string;
   ownerAddress?: string;
@@ -21,7 +22,7 @@ export const resolveNameWalletAddress = async (
     return null;
   }
 
-  const response = (await qortalRequest({
+  const response = (await request({
     action: 'GET_NAME_DATA',
     name: trimmedName,
   })) as NameDataResponse | null;

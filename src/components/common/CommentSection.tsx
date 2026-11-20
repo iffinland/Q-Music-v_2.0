@@ -1,14 +1,7 @@
-import {
-  Button,
-  Divider,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
-import { EditRounded, ReplyRounded } from '@mui/icons-material';
+import { Button, Stack, TextField, Typography } from '@mui/material';
 import { useMemo, useState } from 'react';
 import type { MediaComment } from '../../types/engagement';
-
+import { SocialFeedback } from './SocialFeedback';
 interface CommentSectionProps {
   title?: string;
   comments: MediaComment[];
@@ -17,8 +10,13 @@ interface CommentSectionProps {
   isSubmittingComment?: boolean;
   isEditingComment?: boolean;
   canLoadMore?: boolean;
+  error?: string | null;
+  notice?: string;
+  uncertain?: boolean;
+  onRefresh?: () => void;
+  onRetrySaved?: () => void;
   onAddComment: (message: string) => Promise<boolean> | boolean;
-  onReply: (commentId: string, message: string) => Promise<boolean> | boolean;
+  onReply: (id: string, message: string) => Promise<boolean> | boolean;
   onEdit: (
     comment: MediaComment,
     message: string
@@ -26,7 +24,132 @@ interface CommentSectionProps {
   onDelete: (comment: MediaComment) => Promise<boolean> | boolean;
   onLoadMore?: () => void;
 }
-
+const CommentCard = ({
+  comment,
+  parent,
+  currentUser,
+  busy,
+  onReply,
+  onEdit,
+  onDelete,
+}: {
+  comment: MediaComment;
+  parent?: MediaComment;
+  currentUser?: string;
+  busy: boolean;
+  onReply: CommentSectionProps['onReply'];
+  onEdit: CommentSectionProps['onEdit'];
+  onDelete: CommentSectionProps['onDelete'];
+}) => {
+  const [mode, setMode] = useState<'reply' | 'edit' | null>(null),
+    [draft, setDraft] = useState('');
+  const own = Boolean(
+    currentUser && currentUser.toLowerCase() === comment.author.toLowerCase()
+  );
+  const save = async () => {
+    const text = draft;
+    const okay =
+      mode === 'reply'
+        ? await onReply(comment.id, text)
+        : await onEdit(comment, text);
+    if (okay) {
+      setMode(null);
+      setDraft('');
+    }
+  };
+  return (
+    <Stack
+      spacing={1}
+      sx={{
+        minWidth: 0,
+        overflowWrap: 'anywhere',
+        border: '1px solid',
+        borderColor: 'divider',
+        borderRadius: 2,
+        p: { xs: 1.5, sm: 2 },
+        bgcolor: 'var(--qm-surface-soft)',
+      }}
+    >
+      <Typography variant="subtitle2">{comment.author}</Typography>
+      <Typography variant="caption" color="text.secondary">
+        {new Date(comment.created).toLocaleString()}
+        {comment.updated && comment.updated !== comment.created
+          ? ' • edited'
+          : ''}
+        {comment.pending ? ' • sent, awaiting propagation' : ''}
+      </Typography>
+      {comment.parentId && (
+        <Typography variant="caption" color="text.secondary">
+          {parent
+            ? `Reply to ${parent.author}${parent.deleted ? ' (comment removed)' : ''}`
+            : 'Reply to an earlier comment (not loaded or removed)'}
+        </Typography>
+      )}
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+        {comment.deleted ? 'Comment removed.' : comment.message}
+      </Typography>
+      {!comment.deleted && (
+        <Stack direction="row" useFlexGap flexWrap="wrap" spacing={1}>
+          <Button
+            size="small"
+            disabled={!currentUser || busy}
+            onClick={() => {
+              setMode('reply');
+              setDraft('');
+            }}
+          >
+            Reply
+          </Button>
+          {own && (
+            <>
+              <Button
+                size="small"
+                disabled={busy}
+                onClick={() => {
+                  setMode('edit');
+                  setDraft(comment.message);
+                }}
+              >
+                Edit
+              </Button>
+              <Button
+                size="small"
+                disabled={busy}
+                onClick={() => void onDelete(comment)}
+              >
+                Remove
+              </Button>
+            </>
+          )}
+        </Stack>
+      )}
+      {mode && (
+        <Stack spacing={1}>
+          <TextField
+            label={mode === 'reply' ? 'Reply' : 'Edit comment'}
+            multiline
+            minRows={2}
+            value={draft}
+            disabled={busy}
+            onChange={(event) => setDraft(event.target.value)}
+            fullWidth
+          />
+          <Stack direction="row" useFlexGap flexWrap="wrap" spacing={1}>
+            <Button
+              disabled={busy || !draft.trim()}
+              onClick={() => void save()}
+            >
+              {mode === 'reply' ? 'Post reply' : 'Save changes'}
+            </Button>
+            <Button disabled={busy} onClick={() => setMode(null)}>
+              Cancel
+            </Button>
+          </Stack>
+        </Stack>
+      )}
+    </Stack>
+  );
+};
 export const CommentSection = ({
   title = 'Comments',
   comments,
@@ -35,339 +158,103 @@ export const CommentSection = ({
   isSubmittingComment,
   isEditingComment,
   canLoadMore,
+  error,
+  notice,
+  uncertain,
+  onRefresh,
+  onRetrySaved,
   onAddComment,
   onReply,
   onEdit,
   onDelete,
   onLoadMore,
 }: CommentSectionProps) => {
-  const [commentDraft, setCommentDraft] = useState('');
-  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
-  const [editDrafts, setEditDrafts] = useState<Record<string, string>>({});
-
-  const dateFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
-    []
-  );
-
-  const commentGroups = useMemo(() => {
-    const repliesByParent = comments.reduce<
-      Record<string, MediaComment[]>
-    >((accumulator, comment) => {
-      if (!comment.parentId) {
-        return accumulator;
+  const [draft, setDraft] = useState('');
+  const parents = useMemo(() => {
+    const result = new Map<string, MediaComment | null>();
+    for (const comment of comments)
+      for (const id of [comment.id, comment.resourceId]) {
+        if (!id) continue;
+        const previous = result.get(id);
+        result.set(
+          id,
+          result.has(id) && previous?.id !== comment.id ? null : comment
+        );
       }
-      accumulator[comment.parentId] = accumulator[comment.parentId] || [];
-      accumulator[comment.parentId].push(comment);
-      return accumulator;
-    }, {});
-
-    return comments
-      .filter((comment) => !comment.parentId)
-      .map((comment) => ({
-        comment,
-        replies: (repliesByParent[comment.id] || []).sort(
-          (left, right) => left.created - right.created
-        ),
-      }));
+    return result;
   }, [comments]);
-
-  const handleAddComment = async () => {
-    const wasPublished = await onAddComment(commentDraft);
-    if (wasPublished) {
-      setCommentDraft('');
-    }
-  };
-
-  const handleReply = async (commentId: string) => {
-    const wasPublished = await onReply(commentId, replyDrafts[commentId] || '');
-    if (wasPublished) {
-      setReplyDrafts((current) => {
-        const next = { ...current };
-        delete next[commentId];
-        return next;
-      });
-    }
-  };
-
-  const handleEdit = async (comment: MediaComment) => {
-    const wasSaved = await onEdit(comment, editDrafts[comment.id] || '');
-    if (wasSaved) {
-      setEditDrafts((current) => {
-        const next = { ...current };
-        delete next[comment.id];
-        return next;
-      });
-    }
-  };
-
+  const busy = Boolean(isSubmittingComment || isEditingComment);
   return (
-    <Stack spacing={1.25}>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        justifyContent="space-between"
-        spacing={0.75}
-      >
-        <Typography variant="h6" sx={{ lineHeight: 1.08 }}>
-          {title}
-        </Typography>
-        <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
-          {isLoading
-            ? 'Refreshing social activity...'
-            : 'Comments are stored on QDN.'}
-        </Typography>
-      </Stack>
-
-      <Stack
-        spacing={1.25}
-        sx={{
-          border: '1px solid',
-          borderColor: 'divider',
-          borderRadius: 2,
-          px: { xs: 1.5, sm: 2 },
-          py: 1.5,
-          backgroundColor: 'var(--qm-surface-soft)',
-        }}
-      >
-        <TextField
-          label="Add a comment"
-          multiline
-          minRows={2}
-          value={commentDraft}
-          onChange={(event) => setCommentDraft(event.target.value)}
-        />
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          justifyContent="space-between"
-        >
-          <Typography
-            variant="caption"
-            sx={{ color: 'text.secondary', alignSelf: 'center' }}
-          >
-            Keep it short and readable.
-          </Typography>
+    <Stack spacing={1.5} sx={{ minWidth: 0 }}>
+      <Typography variant="h6">{title}</Typography>
+      <SocialFeedback
+        error={error}
+        notice={notice}
+        busy={busy || isLoading}
+        onRefresh={onRefresh}
+        uncertain={uncertain}
+        onRetry={onRetrySaved}
+        label="comments"
+      />
+      <Typography variant="caption" color="text.secondary">
+        Comments are public QDN publications. Posting, editing or removing needs
+        approval in Hub. Removal hides the current comment in updated Q-Music;
+        old QDN versions can remain available.
+      </Typography>
+      {currentUser ? (
+        <Stack spacing={1}>
+          <TextField
+            label="Add a comment"
+            multiline
+            minRows={2}
+            disabled={busy || uncertain}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            fullWidth
+          />
           <Button
             variant="contained"
-            size="small"
-            onClick={() => void handleAddComment()}
-            disabled={isSubmittingComment}
+            sx={{ alignSelf: 'flex-start' }}
+            disabled={busy || uncertain || !draft.trim()}
+            onClick={() => {
+              const text = draft;
+              void Promise.resolve(onAddComment(text)).then((okay) => {
+                if (okay)
+                  setDraft((current) => (current === text ? '' : current));
+              });
+            }}
           >
-            {isSubmittingComment ? 'Publishing...' : 'Post comment'}
+            {busy ? 'Waiting for Hub…' : 'Post comment'}
           </Button>
         </Stack>
-      </Stack>
-
-      <Stack spacing={1}>
-        {commentGroups.length ? (
-          commentGroups.map(({ comment, replies }) => (
-            <Stack
-              key={comment.id}
-              spacing={1}
-              sx={{
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 2,
-                px: { xs: 1.5, sm: 2 },
-                py: 1.35,
-                backgroundColor: 'var(--qm-surface-soft)',
-              }}
-            >
-              <Stack
-                direction={{ xs: 'column', sm: 'row' }}
-                justifyContent="space-between"
-                spacing={0.5}
-              >
-                <Typography variant="subtitle2">{comment.author}</Typography>
-                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-                  {dateFormatter.format(comment.created)}
-                </Typography>
-              </Stack>
-
-              <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
-                {comment.message}
-              </Typography>
-
-              <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-                <Button
-                  variant="text"
-                  size="small"
-                  startIcon={<ReplyRounded fontSize="small" />}
-                  onClick={() =>
-                    setReplyDrafts((current) => ({
-                      ...current,
-                      [comment.id]: current[comment.id] ?? '',
-                    }))
-                  }
-                >
-                  Reply
-                </Button>
-                {comment.author === currentUser ? (
-                  <>
-                    <Button
-                      variant="text"
-                      size="small"
-                      startIcon={<EditRounded fontSize="small" />}
-                      onClick={() =>
-                        setEditDrafts((current) => ({
-                          ...current,
-                          [comment.id]: current[comment.id] ?? comment.message,
-                        }))
-                      }
-                    >
-                      Edit
-                    </Button>
-                    <Button
-                      variant="text"
-                      size="small"
-                      onClick={() => void onDelete(comment)}
-                    >
-                      Delete
-                    </Button>
-                  </>
-                ) : null}
-              </Stack>
-
-              {replyDrafts[comment.id] !== undefined ? (
-                <Stack spacing={1}>
-                  <TextField
-                    label="Reply"
-                    multiline
-                    minRows={2}
-                    size="small"
-                    value={replyDrafts[comment.id] || ''}
-                    onChange={(event) =>
-                      setReplyDrafts((current) => ({
-                        ...current,
-                        [comment.id]: event.target.value,
-                      }))
-                    }
-                  />
-                  <Stack direction="row" spacing={1}>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={() => void handleReply(comment.id)}
-                      disabled={isSubmittingComment}
-                    >
-                      {isSubmittingComment ? 'Publishing...' : 'Post reply'}
-                    </Button>
-                    <Button
-                      variant="text"
-                      size="small"
-                      onClick={() =>
-                        setReplyDrafts((current) => {
-                          const next = { ...current };
-                          delete next[comment.id];
-                          return next;
-                        })
-                      }
-                    >
-                      Cancel
-                    </Button>
-                  </Stack>
-                </Stack>
-              ) : null}
-
-              {editDrafts[comment.id] !== undefined ? (
-                <Stack spacing={1}>
-                  <TextField
-                    label="Edit comment"
-                    multiline
-                    minRows={2}
-                    size="small"
-                    value={editDrafts[comment.id] || ''}
-                    onChange={(event) =>
-                      setEditDrafts((current) => ({
-                        ...current,
-                        [comment.id]: event.target.value,
-                      }))
-                    }
-                  />
-                  <Stack direction="row" spacing={1}>
-                    <Button
-                      variant="contained"
-                      size="small"
-                      onClick={() => void handleEdit(comment)}
-                      disabled={isEditingComment}
-                    >
-                      {isEditingComment ? 'Saving...' : 'Save changes'}
-                    </Button>
-                    <Button
-                      variant="text"
-                      size="small"
-                      onClick={() =>
-                        setEditDrafts((current) => {
-                          const next = { ...current };
-                          delete next[comment.id];
-                          return next;
-                        })
-                      }
-                    >
-                      Cancel
-                    </Button>
-                  </Stack>
-                </Stack>
-              ) : null}
-
-              {replies.length ? (
-                <>
-                  <Divider />
-                  <Stack spacing={0.75} sx={{ pl: { xs: 1, sm: 2 } }}>
-                    {replies.map((reply) => (
-                      <Stack
-                        key={reply.id}
-                        spacing={0.5}
-                        sx={{
-                          borderLeft: '2px solid',
-                          borderColor: 'divider',
-                          pl: 1.25,
-                          py: 0.25,
-                        }}
-                      >
-                        <Stack
-                          direction={{ xs: 'column', sm: 'row' }}
-                          justifyContent="space-between"
-                          spacing={0.5}
-                        >
-                          <Typography variant="subtitle2">
-                            {reply.author}
-                          </Typography>
-                          <Typography
-                            variant="caption"
-                            sx={{ color: 'text.secondary' }}
-                          >
-                            {dateFormatter.format(reply.created)}
-                          </Typography>
-                        </Stack>
-                        <Typography variant="body2" sx={{ lineHeight: 1.55 }}>
-                          {reply.message}
-                        </Typography>
-                      </Stack>
-                    ))}
-                  </Stack>
-                </>
-              ) : null}
-            </Stack>
-          ))
-        ) : (
-          <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-            No comments yet.
-          </Typography>
-        )}
-        {canLoadMore && onLoadMore ? (
-          <Button variant="outlined" size="small" onClick={onLoadMore}>
-            Load 5 more comments
-          </Button>
-        ) : null}
-      </Stack>
+      ) : (
+        <Typography variant="body2">Log in to post or reply.</Typography>
+      )}
+      {isLoading && <Typography role="status">Loading comments…</Typography>}
+      {!isLoading && !error && !comments.length && (
+        <Typography variant="body2">No comments yet.</Typography>
+      )}
+      {comments.map((comment) => (
+        <CommentCard
+          key={comment.id}
+          comment={comment}
+          parent={parents.get(comment.parentId || '') || undefined}
+          currentUser={currentUser}
+          busy={busy || Boolean(uncertain)}
+          onReply={onReply}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      ))}
+      {canLoadMore && onLoadMore && (
+        <Button
+          disabled={isLoading || busy}
+          variant="outlined"
+          onClick={onLoadMore}
+        >
+          Load more comments
+        </Button>
+      )}
     </Stack>
   );
 };

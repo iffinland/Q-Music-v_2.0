@@ -1,5 +1,6 @@
-import { showError, showSuccess, useQortBalance } from 'qapp-core';
-import { useCallback, useMemo, useState } from 'react';
+import { requestError } from '../services/qdnRequests';
+import { showError, showSuccess, useQortBalance, useGlobal } from '../qortal';
+import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import { resolveNameWalletAddress } from '../services/names';
 
 type UseQortTipParams = {
@@ -11,8 +12,17 @@ export const useQortTip = ({
   recipientName,
   entityLabel,
 }: UseQortTipParams) => {
-  const { value: qortBalance, getBalance, isLoading: isBalanceLoading } =
-    useQortBalance();
+  const { auth } = useGlobal();
+  const scope = `${auth.address}:${recipientName || ''}`;
+  const sendingScope = useRef<string | null>(null);
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const [resolvedScope, setResolvedScope] = useState('');
+  const {
+    value: qortBalance,
+    getBalance,
+    isLoading: isBalanceLoading,
+  } = useQortBalance();
   const [isOpen, setIsOpen] = useState(false);
   const [amount, setAmount] = useState('0');
   const [recipientAddress, setRecipientAddress] = useState<string | null>(null);
@@ -20,7 +30,23 @@ export const useQortTip = ({
   const [isResolvingRecipient, setIsResolvingRecipient] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
+  const safeRecipient = resolvedScope === scope ? recipientAddress : null;
+  useEffect(() => {
+    currentScope.current = scope;
+    setIsOpen(false);
+    setAmount('0');
+    setRecipientAddress(null);
+    setResolvedScope('');
+    setResolveError(null);
+    setIsResolvingRecipient(false);
+    setIsSending(false);
+    return () => {
+      if (currentScope.current === scope) currentScope.current = '';
+    };
+  }, [scope]);
   const resolveRecipient = useCallback(async () => {
+    const expected = scope;
+    if (currentScope.current !== expected) return null;
     const trimmedRecipient = recipientName?.trim();
     if (!trimmedRecipient) {
       setRecipientAddress(null);
@@ -33,6 +59,7 @@ export const useQortTip = ({
 
     try {
       const address = await resolveNameWalletAddress(trimmedRecipient);
+      if (currentScope.current !== expected) return null;
       if (!address) {
         setRecipientAddress(null);
         setResolveError('Publisher wallet address could not be resolved.');
@@ -40,8 +67,10 @@ export const useQortTip = ({
       }
 
       setRecipientAddress(address);
+      setResolvedScope(expected);
       return address;
     } catch (error) {
+      if (currentScope.current !== expected) return null;
       const message =
         error instanceof Error && error.message
           ? error.message
@@ -50,31 +79,16 @@ export const useQortTip = ({
       setResolveError(message);
       return null;
     } finally {
-      setIsResolvingRecipient(false);
+      if (currentScope.current === expected) setIsResolvingRecipient(false);
     }
-  }, [recipientName]);
+  }, [recipientName, scope]);
 
   const openModal = useCallback(async () => {
+    if (currentScope.current !== scope) return;
     setIsOpen(true);
 
-    if (qortBalance === null) {
-      try {
-        await getBalance();
-      } catch {
-        // Keep the modal usable even if balance refresh fails.
-      }
-    }
-
-    if (!recipientAddress && !isResolvingRecipient) {
-      await resolveRecipient();
-    }
-  }, [
-    getBalance,
-    isResolvingRecipient,
-    qortBalance,
-    recipientAddress,
-    resolveRecipient,
-  ]);
+    await Promise.allSettled([getBalance(), resolveRecipient()]);
+  }, [getBalance, resolveRecipient, scope]);
 
   const closeModal = useCallback(() => {
     if (isSending) {
@@ -85,6 +99,9 @@ export const useQortTip = ({
   }, [isSending]);
 
   const sendTip = useCallback(async () => {
+    const expected = scope;
+    if (currentScope.current !== expected || sendingScope.current === expected)
+      return;
     const parsedAmount = Number(amount);
     const trimmedRecipient = recipientName?.trim();
 
@@ -108,48 +125,58 @@ export const useQortTip = ({
       return;
     }
 
-    const resolvedAddress = recipientAddress ?? (await resolveRecipient());
-    if (!resolvedAddress) {
-      showError('Publisher wallet address could not be resolved.');
-      return;
-    }
-
+    sendingScope.current = expected;
+    setIsSending(true);
     try {
-      setIsSending(true);
-      await qortalRequest({
+      const resolvedAddress = await resolveRecipient();
+      if (currentScope.current !== expected) return;
+      if (!resolvedAddress) {
+        showError('Publisher wallet address could not be resolved.');
+        return;
+      }
+      const transfer = await qortalRequest({
         action: 'SEND_COIN',
         coin: 'QORT',
         recipient: resolvedAddress,
         amount: parsedAmount,
       });
+      if (!transfer || (typeof transfer === 'object' && 'error' in transfer))
+        throw new Error(
+          requestError(
+            transfer,
+            'The tip did not return confirmation. Check your wallet before trying again.'
+          )
+        );
+      if (currentScope.current !== expected) return;
       setIsOpen(false);
       setAmount('0');
       showSuccess(
-        `Thanks for tipping @${trimmedRecipient} on this ${entityLabel}. 💚`
+        `Tip request sent to @${trimmedRecipient} for this ${entityLabel}.`
       );
       void getBalance().catch(() => undefined);
     } catch (error) {
+      if (currentScope.current !== expected) return;
       const message =
         error instanceof Error && error.message
           ? error.message
           : 'Tip transfer failed.';
       showError(message);
     } finally {
-      setIsSending(false);
+      if (sendingScope.current === expected) sendingScope.current = null;
+      if (currentScope.current === expected) setIsSending(false);
     }
   }, [
     amount,
     entityLabel,
     getBalance,
     qortBalance,
-    recipientAddress,
+    scope,
     recipientName,
     resolveRecipient,
   ]);
 
   const formattedBalance = useMemo(
-    () =>
-      typeof qortBalance === 'number' ? qortBalance.toFixed(8) : '0.00000000',
+    () => (typeof qortBalance === 'number' ? qortBalance.toFixed(8) : '—'),
     [qortBalance]
   );
 
@@ -162,7 +189,7 @@ export const useQortTip = ({
     isResolvingRecipient,
     isSending,
     openModal,
-    recipientAddress,
+    recipientAddress: safeRecipient,
     recipientName: recipientName?.trim() || '',
     resolveError,
     sendTip,

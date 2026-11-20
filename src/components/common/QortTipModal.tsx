@@ -1,4 +1,13 @@
-import { Box, Button, Dialog, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 import type { ChangeEvent } from 'react';
 
 type QortTipModalProps = {
@@ -67,7 +76,10 @@ export const QortTipModal = ({
           <Typography variant="body1" sx={{ mt: 0.35, fontWeight: 700 }}>
             {recipientName ? `@${recipientName}` : 'Unknown publisher'}
           </Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>
+          <Typography
+            variant="caption"
+            sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}
+          >
             {isResolvingRecipient
               ? 'Resolving wallet address...'
               : resolveError

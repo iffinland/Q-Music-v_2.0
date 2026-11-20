@@ -8,11 +8,7 @@ interface ImageLightboxProps {
   children: (controls: { open: () => void }) => ReactNode;
 }
 
-export const ImageLightbox = ({
-  alt,
-  src,
-  children,
-}: ImageLightboxProps) => {
+export const ImageLightbox = ({ alt, src, children }: ImageLightboxProps) => {
   const [open, setOpen] = useState(false);
 
   return (

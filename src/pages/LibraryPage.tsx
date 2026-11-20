@@ -1,11 +1,10 @@
-import { useAtom } from 'jotai';
 import { Button, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { PageHero } from '../components/common/PageHero';
 import { SectionCard } from '../components/common/SectionCard';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
-import { librarySyncStateAtom } from '../state/library';
+import { LibraryControls } from '../components/shell/LibraryControls';
 import {
   formatPlaylistCardMetadata,
   formatPlaylistTrackCount,
@@ -19,10 +18,16 @@ const libraryHighlights = [
 ];
 
 export const LibraryPage = () => {
-  const { favoritePlaylists, favoriteSongs, recentSongs } = useLibrary();
+  const {
+    account,
+    favoritePlaylists,
+    favoriteSongs,
+    recentSongs,
+    syncState,
+    addRecentSong,
+  } = useLibrary();
   const { playTrack } = useMiniPlayer();
-  const [librarySyncState] = useAtom(librarySyncStateAtom);
-  const playlistCountsLoading = librarySyncState === 'loading';
+  const playlistCountsLoading = syncState === 'loading';
 
   return (
     <Stack spacing={3}>
@@ -31,6 +36,7 @@ export const LibraryPage = () => {
         title="Your saved songs, playlists and recent listening history."
         description="Keep the content you care about close, reopen playlists quickly and jump back into recent listening sessions."
       />
+      <LibraryControls key={account.key} />
       {recentSongs.length > 0 ? (
         <Stack spacing={2}>
           <Typography variant="h4">Recently Played</Typography>
@@ -50,7 +56,8 @@ export const LibraryPage = () => {
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   <Button
                     variant="contained"
-                    onClick={() =>
+                    onClick={() => {
+                      addRecentSong(song);
                       playTrack({
                         key: `${song.publisher}:${song.identifier}`,
                         id: song.id,
@@ -60,8 +67,8 @@ export const LibraryPage = () => {
                         title: song.title,
                         artist: song.artist,
                         context: song.publisher,
-                      })
-                    }
+                      });
+                    }}
                   >
                     Play again
                   </Button>
@@ -97,7 +104,8 @@ export const LibraryPage = () => {
                 <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                   <Button
                     variant="contained"
-                    onClick={() =>
+                    onClick={() => {
+                      addRecentSong(song);
                       playTrack({
                         key: `${song.publisher}:${song.identifier}`,
                         id: song.id,
@@ -107,8 +115,8 @@ export const LibraryPage = () => {
                         title: song.title,
                         artist: song.artist,
                         context: song.publisher,
-                      })
-                    }
+                      });
+                    }}
                   >
                     Play
                   </Button>

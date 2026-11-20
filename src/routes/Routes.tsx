@@ -1,3 +1,4 @@
+import { withRouteBoundaries } from './routeBoundaries';
 import { Suspense, lazy, type ReactNode } from 'react';
 import {
   createBrowserRouter,
@@ -76,74 +77,74 @@ const withSuspense = (element: ReactNode) => (
   <Suspense fallback={<div>Loading route...</div>}>{element}</Suspense>
 );
 
-export function Routes() {
-  const router = createBrowserRouter(
-    [
-      {
-        path: '/',
-        element: withSuspense(<AppWrapper />),
-        errorElement: <RouteRefreshNotice />,
-        children: [
-          {
-            index: true,
-            element: withSuspense(<AppHome />),
-          },
-          {
-            path: 'songs',
-            element: withSuspense(<SongsPage />),
-          },
-          {
-            path: 'songs/:publisher/:identifier',
-            element: withSuspense(<SongDetailPage />),
-          },
-          {
-            path: 'playlists',
-            children: [
-              {
-                index: true,
-                element: <Navigate to="/playlists/all" replace />,
-              },
-              {
-                path: 'all',
-                element: withSuspense(<PlaylistsPage />),
-              },
-              {
-                path: ':name/:playlistId',
-                element: withSuspense(<PlaylistDetailPage />),
-              },
-            ],
-          },
-          {
-            path: 'library',
-            element: withSuspense(<LibraryPage />),
-          },
-          {
-            path: 'my-music',
-            element: withSuspense(<MyMusicPage />),
-          },
-          {
-            path: 'my-music/songs/:identifier/edit',
-            element: withSuspense(<EditSongPage />),
-          },
-          {
-            path: 'my-music/playlists/:identifier/edit',
-            element: withSuspense(<EditPlaylistPage />),
-          },
-          {
-            path: 'publish',
-            element: withSuspense(<PublishPage />),
-          },
-          {
-            path: '*',
-            element: withSuspense(<NotFoundPage />),
-          },
-        ],
-      },
-    ],
+const router = createBrowserRouter(
+  withRouteBoundaries([
     {
-      basename: baseUrl,
-    }
-  );
+      path: '/',
+      element: withSuspense(<AppWrapper />),
+      errorElement: <RouteRefreshNotice />,
+      children: [
+        {
+          index: true,
+          element: withSuspense(<AppHome />),
+        },
+        {
+          path: 'songs',
+          element: withSuspense(<SongsPage />),
+        },
+        {
+          path: 'songs/:publisher/:identifier',
+          element: withSuspense(<SongDetailPage />),
+        },
+        {
+          path: 'playlists',
+          children: [
+            {
+              index: true,
+              element: <Navigate to="/playlists/all" replace />,
+            },
+            {
+              path: 'all',
+              element: withSuspense(<PlaylistsPage />),
+            },
+            {
+              path: ':name/:playlistId',
+              element: withSuspense(<PlaylistDetailPage />),
+            },
+          ],
+        },
+        {
+          path: 'library',
+          element: withSuspense(<LibraryPage />),
+        },
+        {
+          path: 'my-music',
+          element: withSuspense(<MyMusicPage />),
+        },
+        {
+          path: 'my-music/songs/:identifier/edit',
+          element: withSuspense(<EditSongPage />),
+        },
+        {
+          path: 'my-music/playlists/:identifier/edit',
+          element: withSuspense(<EditPlaylistPage />),
+        },
+        {
+          path: 'publish',
+          element: withSuspense(<PublishPage />),
+        },
+        {
+          path: '*',
+          element: withSuspense(<NotFoundPage />),
+        },
+      ],
+    },
+  ]),
+  {
+    basename: baseUrl,
+  }
+);
 
+export function Routes() {
   return <RouterProvider router={router} />;
 }

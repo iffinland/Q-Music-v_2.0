@@ -1,4 +1,4 @@
-import { objectToBase64 } from 'qapp-core';
+import { objectToBase64 } from '../qortal/content';
 
 export const FETCH_LIMIT = 50;
 export const LIKE_PROPAGATION_TIMEOUT_MS = 5_000;
@@ -83,18 +83,6 @@ export const performQortalRequest = async (
   }
 
   return result;
-};
-
-export const deleteQdnResource = async (name: string, identifier: string) => {
-  await performQortalRequest(
-    {
-      action: 'DELETE_QDN_RESOURCE',
-      name,
-      service: 'DOCUMENT',
-      identifier,
-    },
-    'Failed to delete QDN resource.'
-  );
 };
 
 export const encodeObject = objectToBase64;

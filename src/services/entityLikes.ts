@@ -1,197 +1,136 @@
+import type { ReadOptions } from './qdnRequests';
 import {
-  invalidateQdnCache,
-  searchQdnResources,
-  waitForQdnResourceReady,
-} from './qdn';
+  legacyLikeId,
+  likeId,
+  sameTarget,
+  prepareSocial,
+  sendSocial,
+  type Actor,
+  type Target,
+} from './engagement/shared';
 import {
-  FETCH_LIMIT,
-  LIKE_PROPAGATION_POLL_MS,
-  LIKE_PROPAGATION_TIMEOUT_MS,
-  buildEntityKey,
-  deleteQdnResource,
-  encodeObject,
-  performQortalRequest,
-  sleep,
-} from './entityEngagementShared';
-
-const SONG_LIKE_PREFIX = 'song_like_';
-const PLAYLIST_LIKE_PREFIX = 'playlist_like_';
-
-const getLikePrefix = (entityType: 'song' | 'playlist') =>
-  entityType === 'song' ? SONG_LIKE_PREFIX : PLAYLIST_LIKE_PREFIX;
-
-export const buildLikeIdentifier = (
-  entityType: 'song' | 'playlist',
-  entityId: string
-) => `${getLikePrefix(entityType)}${buildEntityKey(entityId)}`;
-
-const invalidateLikeQueries = (
-  entityType: 'song' | 'playlist',
-  entityId: string,
-  username?: string
-) => {
-  const identifier = buildLikeIdentifier(entityType, entityId);
-
-  invalidateQdnCache((payload) => {
-    if (payload.service !== 'DOCUMENT') {
-      return false;
-    }
-
-    if (payload.identifier !== identifier) {
-      return false;
-    }
-
-    if (payload.action === 'SEARCH_QDN_RESOURCES') {
-      return true;
-    }
-
-    if (payload.action === 'GET_QDN_RESOURCE_STATUS') {
-      return payload.name === username;
-    }
-
-    if (payload.action === 'FETCH_QDN_RESOURCE') {
-      return username ? payload.name === username : true;
-    }
-
-    return false;
-  });
-};
-
-const waitForLikeRemoval = async (
-  entityType: 'song' | 'playlist',
-  username: string,
-  entityId: string
-) => {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt <= LIKE_PROPAGATION_TIMEOUT_MS) {
-    invalidateLikeQueries(entityType, entityId, username);
-    const result = await searchQdnResources({
-      mode: 'ALL',
-      service: 'DOCUMENT',
-      name: username,
-      identifier: buildLikeIdentifier(entityType, entityId),
-      query: buildLikeIdentifier(entityType, entityId),
-      limit: 1,
-      offset: 0,
-      includeMetadata: false,
-      includeStatus: true,
-      excludeBlocked: true,
-      exactMatchNames: true,
-    });
-
-    if (result.length === 0) {
-      return;
-    }
-
-    await sleep(LIKE_PROPAGATION_POLL_MS);
+  mapSocial,
+  readSocial,
+  searchSocial,
+  socialMetadata,
+  socialReadBudget,
+} from './engagement/read';
+export interface LikesResult {
+  authors: Record<string, boolean>;
+  confirmed?: { identifier: string; revision: string }[];
+  partial: boolean;
+  warning: string;
+}
+const readLikes = async (
+  target: Target,
+  actor: Actor,
+  options: ReadOptions = {}
+): Promise<LikesResult> => {
+  const confirmed: { identifier: string; revision: string }[] = [];
+  const authors: Record<string, boolean> = {},
+    current: Record<string, boolean> = {};
+  let partial = false,
+    unavailable = 0;
+  const modern = likeId(target),
+    legacy = legacyLikeId(target);
+  // Modern likes carry a scoped identity and revision/state in their index.
+  // Legacy payloads need validation because their identifiers omitted the owner.
+  for (const [identifier, limit, v2] of [
+    [legacy, 25, false],
+    [modern, 200, true],
+  ] as const) {
+    const page = await searchSocial(identifier, limit, 0, options);
+    if (page.length === limit) partial = true;
+    await mapSocial(
+      page.filter((entry) => entry.name && entry.identifier === identifier),
+      async (entry) => {
+        try {
+          const metadata = v2 ? socialMetadata(entry, 'like') : null;
+          let active: boolean;
+          if (metadata) {
+            active = metadata.active;
+            if (entry.name!.toLowerCase() === actor.name.toLowerCase())
+              confirmed.push({ identifier, revision: metadata.revision });
+          } else {
+            const data = await readSocial(entry, options);
+            if (
+              !data ||
+              !sameTarget(
+                {
+                  ...data,
+                  entityType: data.entityType || target.entityType,
+                } as Partial<Target>,
+                target
+              )
+            )
+              return;
+            active = data.deleted !== true;
+          }
+          const name = entry.name!.toLowerCase();
+          authors[name] = active;
+          if (v2) current[name] = active;
+        } catch {
+          unavailable++;
+        }
+      }
+    );
   }
-};
-
-export const fetchLikeCount = async (
-  entityType: 'song' | 'playlist',
-  entityId: string
-): Promise<number> => {
-  let total = 0;
-  let offset = 0;
-
-  while (true) {
-    const page = await searchQdnResources({
-      mode: 'ALL',
-      service: 'DOCUMENT',
-      identifier: buildLikeIdentifier(entityType, entityId),
-      limit: FETCH_LIMIT,
-      offset,
-      includeMetadata: false,
-      includeStatus: false,
-      excludeBlocked: true,
-    });
-
-    if (!page.length) break;
-    total += page.length;
-    if (page.length < FETCH_LIMIT) break;
-    offset += FETCH_LIMIT;
+  // Fetch this account explicitly even if it falls outside a bounded count page.
+  if (actor.name) {
+    for (const [identifier, v2] of [
+      [legacy, false],
+      [modern, true],
+    ] as const) {
+      const page = await searchSocial(identifier, 10, 0, options, actor.name);
+      const own = page.find(
+        (entry) =>
+          entry.identifier === identifier &&
+          entry.name?.toLowerCase() === actor.name.toLowerCase()
+      );
+      if (!own) continue;
+      const metadata = v2 ? socialMetadata(own, 'like') : null;
+      if (metadata) {
+        authors[actor.name.toLowerCase()] = metadata.active;
+        current[actor.name.toLowerCase()] = metadata.active;
+        confirmed.push({ identifier, revision: metadata.revision });
+      } else {
+        const data = await readSocial(own, options);
+        if (
+          data &&
+          sameTarget(
+            {
+              ...data,
+              entityType: data.entityType || target.entityType,
+            } as Partial<Target>,
+            target
+          )
+        )
+          authors[actor.name.toLowerCase()] = data.deleted !== true;
+      }
+    }
   }
-
-  return total;
+  Object.assign(authors, current);
+  return {
+    authors,
+    confirmed,
+    partial: partial || unavailable > 0,
+    warning: unavailable
+      ? 'Some older likes could not be read. The count may be incomplete.'
+      : '',
+  };
 };
-
-export const hasUserLiked = async (
-  entityType: 'song' | 'playlist',
-  username: string,
-  entityId: string
-): Promise<boolean> => {
-  const identifier = buildLikeIdentifier(entityType, entityId);
-  const resources = await searchQdnResources({
-    mode: 'ALL',
-    service: 'DOCUMENT',
-    name: username,
-    identifier,
-    query: identifier,
-    limit: 1,
-    offset: 0,
-    includeMetadata: false,
-    includeStatus: true,
-    excludeBlocked: true,
-    exactMatchNames: true,
-  });
-
-  return resources.some(
-    (resource) => resource.name === username && resource.identifier === identifier
+export const fetchLikes = (
+  target: Target,
+  actor: Actor,
+  options: ReadOptions = {}
+) => socialReadBudget(options, (bounded) => readLikes(target, actor, bounded));
+export const setLike = (
+  target: Target,
+  actor: Actor,
+  liked: boolean,
+  isCurrent: () => boolean
+) =>
+  sendSocial(
+    prepareSocial('like', actor, target, { deleted: !liked }),
+    isCurrent
   );
-};
-
-export const likeEntity = async (params: {
-  entityType: 'song' | 'playlist';
-  username: string;
-  entityId: string;
-  entityPublisher: string;
-  title: string;
-}) => {
-  const identifier = buildLikeIdentifier(params.entityType, params.entityId);
-  const data64 = await encodeObject({
-    entityId: params.entityId,
-    entityPublisher: params.entityPublisher,
-    title: params.title,
-    likedAt: Date.now(),
-  });
-
-  await performQortalRequest(
-    {
-      action: 'PUBLISH_QDN_RESOURCE',
-      name: params.username,
-      service: 'DOCUMENT',
-      identifier,
-      data64,
-      encoding: 'base64',
-      title: `Like: ${params.title}`.slice(0, 55),
-      description:
-        `${params.entityType} like for ${params.entityPublisher}/${params.entityId}`.slice(
-          0,
-          4000
-        ),
-    },
-    'Failed to publish like.'
-  );
-
-  invalidateLikeQueries(params.entityType, params.entityId, params.username);
-  await waitForQdnResourceReady({
-    name: params.username,
-    service: 'DOCUMENT',
-    identifier,
-    timeoutMs: LIKE_PROPAGATION_TIMEOUT_MS,
-    pollIntervalMs: LIKE_PROPAGATION_POLL_MS,
-  });
-  invalidateLikeQueries(params.entityType, params.entityId, params.username);
-};
-
-export const unlikeEntity = async (
-  entityType: 'song' | 'playlist',
-  username: string,
-  entityId: string
-) => {
-  await deleteQdnResource(username, buildLikeIdentifier(entityType, entityId));
-  invalidateLikeQueries(entityType, entityId, username);
-  await waitForLikeRemoval(entityType, username, entityId);
-  invalidateLikeQueries(entityType, entityId, username);
-};

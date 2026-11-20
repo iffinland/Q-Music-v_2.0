@@ -1,4 +1,11 @@
-import { Button, Grid, Skeleton, Stack, Typography } from '@mui/material';
+import {
+  Alert,
+  Button,
+  Grid,
+  Skeleton,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { ArtworkThumb } from '../components/common/ArtworkThumb';
 import { HeroButton, PageHero } from '../components/common/PageHero';
@@ -14,11 +21,17 @@ export const HomePage = () => {
   const { addRecentSong, favoritePlaylists, favoriteSongs, recentSongs } =
     useLibrary();
   const { playTrack } = useMiniPlayer();
-  const { songs, isLoading: songsLoading, error: songsError } = useSongsFeed(4);
+  const {
+    songs,
+    isLoading: songsLoading,
+    error: songsError,
+    retry: retrySongs,
+  } = useSongsFeed(4);
   const {
     playlists,
     isLoading: playlistsLoading,
     error: playlistsError,
+    retry: retryPlaylists,
   } = usePlaylistsFeed(3);
 
   return (
@@ -43,6 +56,22 @@ export const HomePage = () => {
         }
       />
 
+      {songsError ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retrySongs}>Retry songs</Button>}
+        >
+          {songsError}
+        </Alert>
+      ) : null}
+      {playlistsError ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retryPlaylists}>Retry playlists</Button>}
+        >
+          {playlistsError}
+        </Alert>
+      ) : null}
       <Grid container spacing={2.5}>
         {songsLoading
           ? Array.from({ length: 2 }).map((_, index) => (
@@ -147,7 +176,9 @@ export const HomePage = () => {
               })}
               meta={[
                 'PLAYLIST',
-                `${playlists[0].songCount} tracks`,
+                ...(typeof playlists[0].songCount === 'number'
+                  ? [`${playlists[0].songCount} tracks`]
+                  : []),
                 playlists[0].publisher,
               ]}
               action={

@@ -20,10 +20,16 @@ export const ArtworkThumb = ({
   size = 72,
   radius = 2,
 }: ArtworkThumbProps) => {
-  const resourceService = kind === 'playlist' ? 'THUMBNAIL' : 'THUMBNAIL';
+  void kind;
+  const resourceService = 'THUMBNAIL';
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
-  const { url: artworkUrl, isLoading } = useQdnResource({
+  const {
+    url: artworkUrl,
+    isLoading,
+    onLoad,
+    onError,
+  } = useQdnResource({
     service: resourceService,
     name: publisher,
     identifier,
@@ -35,6 +41,10 @@ export const ArtworkThumb = ({
     const node = hostRef.current;
     if (!node) return;
 
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((entry) => entry.isIntersecting)) {
@@ -71,6 +81,8 @@ export const ArtworkThumb = ({
             src={artworkUrl}
             alt={title}
             loading="lazy"
+            onLoad={onLoad}
+            onError={onError}
             onClick={open}
             sx={{
               width: size,

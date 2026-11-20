@@ -1,3 +1,4 @@
+import { useState as useCommentState } from 'react';
 import {
   Alert,
   Box,
@@ -15,9 +16,10 @@ import {
   FavoriteRounded,
   PlayArrowRounded,
 } from '@mui/icons-material';
-import { useGlobal } from 'qapp-core';
+import { useGlobal } from '../qortal';
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { useParams } from 'react-router-dom';
+import { SocialFeedback } from '../components/common/SocialFeedback';
 import { CommentSection } from '../components/common/CommentSection';
 import { ImageLightbox } from '../components/common/ImageLightbox';
 import { PageHero } from '../components/common/PageHero';
@@ -44,14 +46,12 @@ const resolvePlaylistSongTitle = (song: PlaylistSongReference) =>
 
 export const PlaylistDetailPage = () => {
   const { name, playlistId } = useParams();
-  const decodedPublisher = name ? decodeURIComponent(name) : undefined;
-  const decodedIdentifier = playlistId
-    ? decodeURIComponent(playlistId)
-    : undefined;
+  const decodedPublisher = name ? name : undefined;
+  const decodedIdentifier = playlistId ? playlistId : undefined;
   const { auth } = useGlobal();
   const { publishPlaylist } = useMediaPublish();
   const { addRecentSong, isPlaylistFavorite, togglePlaylist } = useLibrary();
-  const { playlist, isLoading, error } = usePlaylistDetail(
+  const { playlist, isLoading, error, retry } = usePlaylistDetail(
     decodedPublisher,
     decodedIdentifier
   );
@@ -78,6 +78,12 @@ export const PlaylistDetailPage = () => {
     error: likesError,
     isUpdatingLike,
     toggleLike,
+    canLike,
+    partial: likesPartial,
+    notice: likeNotice,
+    uncertain: likeUncertain,
+    retrySavedLike,
+    refreshLikes,
   } = useEntityLikes({
     entityType: 'playlist',
     entityId: playlist?.identifier,
@@ -85,6 +91,7 @@ export const PlaylistDetailPage = () => {
     title: playlist?.title,
     enabled: Boolean(playlist?.identifier && playlist?.publisher),
   });
+  const [commentsOpen, setCommentsOpen] = useCommentState(false);
   const {
     comments,
     isLoading: commentsLoading,
@@ -96,15 +103,24 @@ export const PlaylistDetailPage = () => {
     editComment,
     canLoadMoreComments,
     loadMoreComments,
+    refreshComments,
+    notice: commentNotice,
+    uncertain: commentUncertain,
+    retrySavedComment,
   } = useEntityComments({
     entityType: 'playlist',
     entityId: playlist?.identifier,
     entityPublisher: playlist?.publisher,
     title: playlist?.title,
-    enabled: Boolean(playlist?.identifier && playlist?.publisher),
+    enabled:
+      commentsOpen && Boolean(playlist?.identifier && playlist?.publisher),
   });
-  const engagementLoading = likesLoading || commentsLoading;
-  const engagementError = likesError || commentsError;
+  const likesLabel =
+    likeCount === undefined
+      ? likesLoading
+        ? 'Loading likes…'
+        : 'Likes unavailable'
+      : `${likeCount}${likesPartial ? '+' : ''}`;
   const tip = useQortTip({
     recipientName: playlist?.publisher,
     entityLabel: 'playlist',
@@ -121,8 +137,8 @@ export const PlaylistDetailPage = () => {
 
   const playlistQueue = useMemo(
     () =>
-      orderedSongs.map((song) => ({
-        key: `${song.publisher}:${song.identifier}`,
+      orderedSongs.map((song, index) => ({
+        key: `${song.publisher}:${song.identifier}:${index}`,
         id: song.identifier,
         identifier: song.identifier,
         publisher: song.publisher,
@@ -182,9 +198,7 @@ export const PlaylistDetailPage = () => {
         songs: orderedSongs,
         existingIdentifier: playlist.identifier,
       });
-      setSaveMessage(
-        `Published successfully. Playlist order is now live as ${result.identifier}.`
-      );
+      setSaveMessage(`${result.title}: ${result.outcome.message}`);
       emitMediaRefresh();
     } catch (publishError) {
       setSaveError(
@@ -242,14 +256,27 @@ export const PlaylistDetailPage = () => {
               ? `Playlist: ${decodedIdentifier}`
               : 'Playlist detail'
         }
-        description="The route shape stays compatible with the old mental model while the implementation underneath is simplified for the new app."
+        description="Listen to the playlist, explore its songs and join the discussion."
       />
-      {error ? <Alert severity="warning">{error}</Alert> : null}
-      {engagementError ? (
-        <Alert severity="warning">{engagementError}</Alert>
+      {error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retry}>Retry</Button>}
+        >
+          {error}
+        </Alert>
       ) : null}
+      <SocialFeedback
+        error={likesError}
+        notice={likeNotice}
+        busy={likesLoading || isUpdatingLike}
+        onRefresh={refreshLikes}
+        uncertain={likeUncertain}
+        onRetry={() => void retrySavedLike()}
+        label="likes"
+      />
       {saveError ? <Alert severity="error">{saveError}</Alert> : null}
-      {saveMessage ? <Alert severity="success">{saveMessage}</Alert> : null}
+      {saveMessage ? <Alert severity="info">{saveMessage}</Alert> : null}
       {isLoading ? (
         <Typography variant="body2">Loading playlist details...</Typography>
       ) : playlist ? (
@@ -305,12 +332,10 @@ export const PlaylistDetailPage = () => {
                 meta={[
                   'PLAYLIST',
                   `${playlist.songCount} tracks`,
-                  engagementLoading
-                    ? 'Loading social...'
-                    : `${likeCount} likes`,
-                  engagementLoading
-                    ? 'Loading comments...'
-                    : `${comments.length} comments`,
+                  likeCount === undefined ? likesLabel : `${likesLabel} likes`,
+                  commentsOpen
+                    ? `${comments.filter((comment) => !comment.deleted).length} loaded comments`
+                    : 'Comments',
                   ...(isOwner ? ['Owner edit mode'] : []),
                 ]}
               />
@@ -341,7 +366,7 @@ export const PlaylistDetailPage = () => {
               variant={hasLike ? 'contained' : 'outlined'}
               size="large"
               onClick={() => void toggleLike()}
-              disabled={isUpdatingLike}
+              disabled={!canLike || isUpdatingLike}
               startIcon={
                 hasLike ? (
                   <FavoriteRounded fontSize="small" />
@@ -351,12 +376,16 @@ export const PlaylistDetailPage = () => {
               }
             >
               {isUpdatingLike
-                ? `Updating like... (${likeCount})`
+                ? `Updating like... (${likesLabel})`
                 : hasLike
-                  ? `Unlike (${likeCount})`
-                  : `Like playlist (${likeCount})`}
+                  ? `Unlike (${likesLabel})`
+                  : `Like playlist (${likesLabel})`}
             </Button>
-            <Button variant="outlined" size="large" onClick={() => void tip.openModal()}>
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={() => void tip.openModal()}
+            >
               Send tip
             </Button>
             {isOwner ? (
@@ -445,19 +474,30 @@ export const PlaylistDetailPage = () => {
           </Stack>
           <Divider />
           <Stack spacing={1.25}>
-            <CommentSection
-              comments={comments}
-              currentUser={auth?.name || undefined}
-              isLoading={commentsLoading}
-              isSubmittingComment={isSubmittingComment}
-              isEditingComment={isEditingComment}
-              onAddComment={(message) => addComment(message)}
-              onReply={(commentId, message) => addComment(message, commentId)}
-              onEdit={(comment, message) => editComment(comment, message)}
-              onDelete={(comment) => removeComment(comment)}
-              canLoadMore={canLoadMoreComments}
-              onLoadMore={loadMoreComments}
-            />
+            <Button onClick={() => setCommentsOpen((value) => !value)}>
+              {commentsOpen ? 'Hide comments' : 'Show comments'}
+            </Button>
+            {commentsOpen ? (
+              <CommentSection
+                key={`${auth?.address}:${auth?.name}:${decodedPublisher}:${decodedIdentifier}`}
+                error={commentsError}
+                notice={commentNotice}
+                onRefresh={refreshComments}
+                uncertain={commentUncertain}
+                onRetrySaved={() => void retrySavedComment()}
+                comments={comments}
+                currentUser={auth?.name || undefined}
+                isLoading={commentsLoading}
+                isSubmittingComment={isSubmittingComment}
+                isEditingComment={isEditingComment}
+                onAddComment={(message) => addComment(message)}
+                onReply={(commentId, message) => addComment(message, commentId)}
+                onEdit={(comment, message) => editComment(comment, message)}
+                onDelete={(comment) => removeComment(comment)}
+                canLoadMore={canLoadMoreComments}
+                onLoadMore={loadMoreComments}
+              />
+            ) : null}
           </Stack>
         </Stack>
       ) : null}

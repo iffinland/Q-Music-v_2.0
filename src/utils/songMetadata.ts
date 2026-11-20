@@ -62,7 +62,8 @@ export const parseSongMetadata = (description?: string): ParsedSongMetadata => {
       return;
     }
 
-    const key = rawKey.trim().toLowerCase();
+    const raw = rawKey.trim().toLowerCase();
+    const key = raw === 'publisheddate' ? 'publishedDate' : raw;
     const value = decodeMetadataValue(rawValueParts.join('=').trim());
     if (!value || !(key in LABELS)) {
       return;

@@ -11,17 +11,19 @@ import {
 import {
   Alert,
   Box,
+  Button,
   IconButton,
   LinearProgress,
   Stack,
   Typography,
 } from '@mui/material';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ImageLightbox } from '../common/ImageLightbox';
-import { resolveSongStreamUrl } from '../../services/songs';
+import { useAudioPlayback } from '../../hooks/useAudioPlayback';
 import {
+  playbackAttemptAtom,
   currentTimeAtom,
   currentTrackAtom,
   durationAtom,
@@ -50,23 +52,18 @@ export const FloatingMiniPlayer = () => {
   const [isPlaying, setIsPlaying] = useAtom(isPlayingAtom);
   const [currentTime, setCurrentTime] = useAtom(currentTimeAtom);
   const [duration, setDuration] = useAtom(durationAtom);
-  const [streamUrl, setStreamUrl] = useAtom(streamUrlAtom);
   const [playerError, setPlayerError] = useAtom(playerErrorAtom);
   const [isFloating, setIsFloating] = useAtom(isFloatingPlayerAtom);
   const [floatingPosition, setFloatingPosition] = useAtom(
     floatingPlayerPositionAtom
   );
-  const [resourceStatusLabel, setResourceStatusLabel] = useState<string | null>(
-    null
-  );
-  const [resourceProgress, setResourceProgress] = useState<number | null>(null);
+  const [playbackAttempt, setPlaybackAttempt] = useAtom(playbackAttemptAtom);
   const volume = useAtomValue(volumeAtom);
   const setCurrentTrack = useSetAtom(currentTrackAtom);
   const setQueue = useSetAtom(queueAtom);
   const setDurationValue = useSetAtom(durationAtom);
   const setCurrentTimeValue = useSetAtom(currentTimeAtom);
   const setStreamUrlValue = useSetAtom(streamUrlAtom);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
@@ -74,10 +71,6 @@ export const FloatingMiniPlayer = () => {
     x: number;
     y: number;
   } | null>(null);
-  const currentTrackKey = currentTrack?.key;
-  const currentTrackIdentifier = currentTrack?.identifier;
-  const currentTrackPublisher = currentTrack?.publisher;
-
   const stopFloatingDrag = useCallback(() => {
     dragStateRef.current = null;
   }, []);
@@ -97,145 +90,31 @@ export const FloatingMiniPlayer = () => {
     [queue, setCurrentTrack, setIsPlaying]
   );
 
-  useEffect(() => {
-    const audio = new Audio();
-    audio.preload = 'metadata';
-    audioRef.current = audio;
-
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime || 0);
-    const onLoadedMetadata = () => setDuration(audio.duration || 0);
-
-    audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('loadedmetadata', onLoadedMetadata);
-
-    return () => {
-      audio.pause();
-      audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
-      audioRef.current = null;
-    };
-  }, [setCurrentTime, setDuration]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = volume;
-  }, [volume]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !currentTrackIdentifier || !currentTrackPublisher) return;
-
-    let cancelled = false;
-
-    const load = async () => {
-      setPlayerError(null);
-      setStreamUrl(null);
-      setCurrentTime(0);
-      setDuration(0);
-      setResourceStatusLabel('Preparing audio');
-      setResourceProgress(null);
-
-      try {
-        const resolvedUrl = await resolveSongStreamUrl(
-          currentTrackPublisher,
-          currentTrackIdentifier,
-          {
-            waitUntilReady: true,
-            onStatusChange: (status, progress) => {
-              if (cancelled) return;
-              setResourceStatusLabel(`QDN ${status}`);
-              setResourceProgress(
-                typeof progress === 'number'
-                  ? Math.max(0, Math.min(100, progress))
-                  : null
-              );
-            },
-          }
-        );
-
-        if (cancelled) return;
-
-        if (!resolvedUrl) {
-          setPlayerError('Audio URL could not be resolved.');
-          setIsPlaying(false);
-          return;
-        }
-
-        audio.src = resolvedUrl;
-        audio.load();
-        setStreamUrl(resolvedUrl);
-        setResourceStatusLabel('Ready');
-        setResourceProgress(100);
-      } catch (playbackError) {
-        if (!cancelled) {
-          setPlayerError(
-            playbackError instanceof Error &&
-              playbackError.message.trim().length > 0
-              ? playbackError.message
-              : 'Playback could not be started.'
-          );
-          setIsPlaying(false);
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    currentTrackIdentifier,
-    currentTrackKey,
-    currentTrackPublisher,
-    setCurrentTime,
-    setDuration,
-    setIsPlaying,
-    setPlayerError,
-    setStreamUrl,
-  ]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio || !streamUrl) return;
-
-    if (isPlaying) {
-      setPlayerError(null);
-      void audio.play().catch((playbackError) => {
-        setPlayerError(
-          playbackError instanceof Error &&
-            playbackError.message.trim().length > 0
-            ? playbackError.message
-            : 'Playback could not be resumed.'
-        );
-        setIsPlaying(false);
-      });
-      return;
-    }
-
-    audio.pause();
-  }, [isPlaying, setIsPlaying, setPlayerError, streamUrl]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const onEnded = () => {
+  const {
+    status: resourceStatusLabel,
+    buffering,
+    setPlaying,
+    stop,
+  } = useAudioPlayback({
+    track: currentTrack,
+    isPlaying,
+    volume,
+    attempt: playbackAttempt,
+    onPlaying: setIsPlaying,
+    onTime: setCurrentTime,
+    onDuration: setDuration,
+    onUrl: setStreamUrlValue,
+    onError: setPlayerError,
+    onEnded: () => {
       const nextIndex = currentIndex + 1;
-      if (nextIndex >= 0 && nextIndex < queue.length) {
-        selectTrackAt(nextIndex);
-        return;
-      }
-      setIsPlaying(false);
-    };
-
-    audio.addEventListener('ended', onEnded);
-
-    return () => {
-      audio.removeEventListener('ended', onEnded);
-    };
-  }, [currentIndex, queue, selectTrackAt, setIsPlaying]);
+      if (nextIndex > 0 && nextIndex < queue.length) selectTrackAt(nextIndex);
+      else setIsPlaying(false);
+    },
+  });
+  const retryPlayback = () => {
+    setPlaybackAttempt((value) => value + 1);
+    setIsPlaying(true);
+  };
 
   const clampFloatingPosition = useCallback((x: number, y: number) => {
     const viewportWidth = window.innerWidth;
@@ -339,13 +218,8 @@ export const FloatingMiniPlayer = () => {
     [floatingPosition.x, floatingPosition.y, isFloating]
   );
 
-  const handleClosePlayer = useCallback(() => {
-    const audio = audioRef.current;
-    if (audio) {
-      audio.pause();
-      audio.removeAttribute('src');
-      audio.load();
-    }
+  const handleClosePlayer = () => {
+    stop();
 
     setIsPlaying(false);
     setCurrentTrack(null);
@@ -355,18 +229,7 @@ export const FloatingMiniPlayer = () => {
     setStreamUrlValue(null);
     setPlayerError(null);
     setIsFloating(false);
-    setResourceStatusLabel(null);
-    setResourceProgress(null);
-  }, [
-    setCurrentTimeValue,
-    setCurrentTrack,
-    setDurationValue,
-    setIsFloating,
-    setIsPlaying,
-    setPlayerError,
-    setQueue,
-    setStreamUrlValue,
-  ]);
+  };
 
   if (!currentTrack) {
     return null;
@@ -405,7 +268,15 @@ export const FloatingMiniPlayer = () => {
       }}
     >
       {playerError ? (
-        <Alert severity="warning" sx={{ mb: 1.5 }}>
+        <Alert
+          severity="warning"
+          sx={{ mb: 1.5 }}
+          action={
+            <Button color="inherit" onClick={retryPlayback}>
+              Retry
+            </Button>
+          }
+        >
           {playerError}
         </Alert>
       ) : null}
@@ -483,6 +354,7 @@ export const FloatingMiniPlayer = () => {
             <IconButton
               color="inherit"
               size="small"
+              aria-label="Close player"
               onClick={handleClosePlayer}
             >
               <CloseRounded />
@@ -497,6 +369,7 @@ export const FloatingMiniPlayer = () => {
         >
           <IconButton
             color="inherit"
+            aria-label="Previous song"
             disabled={currentIndex <= 0}
             onClick={() => selectTrackAt(currentIndex - 1)}
           >
@@ -504,12 +377,18 @@ export const FloatingMiniPlayer = () => {
           </IconButton>
           <IconButton
             color="primary"
-            onClick={() => setIsPlaying((value) => !value)}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+            onClick={() =>
+              playerError && !playerError.startsWith('Press Play')
+                ? retryPlayback()
+                : setPlaying(!isPlaying)
+            }
           >
             {isPlaying ? <PauseRounded /> : <PlayArrowRounded />}
           </IconButton>
           <IconButton
             color="inherit"
+            aria-label="Next song"
             disabled={currentIndex < 0 || currentIndex >= queue.length - 1}
             onClick={() => selectTrackAt(currentIndex + 1)}
           >
@@ -534,21 +413,13 @@ export const FloatingMiniPlayer = () => {
           </Typography>
         </Stack>
       </Stack>
-      {resourceStatusLabel && !streamUrl ? (
+      {buffering && resourceStatusLabel ? (
         <Stack spacing={0.5} sx={{ mt: 1.25 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {resourceStatusLabel}
-            {typeof resourceProgress === 'number'
-              ? ` (${resourceProgress}%)`
-              : ''}
           </Typography>
           <LinearProgress
-            variant={
-              typeof resourceProgress === 'number'
-                ? 'determinate'
-                : 'indeterminate'
-            }
-            value={typeof resourceProgress === 'number' ? resourceProgress : 0}
+            variant="indeterminate"
             sx={{
               height: 6,
               borderRadius: 999,

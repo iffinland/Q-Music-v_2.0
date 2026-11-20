@@ -1,10 +1,6 @@
 import { useEffect, useState } from 'react';
-import {
-  getQdnResourceUrl,
-  isQdnResourceReady,
-  type QdnResourceStatus,
-  waitForQdnResourceReady,
-} from '../services/qdn';
+import { getQdnResourceUrl, type QdnResourceStatus } from '../services/qdn';
+import { requestError } from '../services/qdnRequests';
 
 interface UseQdnResourceParams {
   service: string;
@@ -19,88 +15,68 @@ export const useQdnResource = ({
   name,
   identifier,
   enabled = true,
-  timeoutMs,
+  timeoutMs = 30_000,
 }: UseQdnResourceParams) => {
   const [url, setUrl] = useState<string | null>(null);
   const [status, setStatus] = useState<QdnResourceStatus | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(enabled));
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      if (!enabled || !name || !identifier) {
-        setUrl(null);
-        setStatus(null);
-        setError(null);
+    const controller = new AbortController();
+    let active = true;
+    setUrl(null);
+    setError(null);
+    setStatus(null);
+    if (!enabled || !name || !identifier) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      controller.abort();
+      if (active) {
         setIsLoading(false);
-        return;
+        setError('Artwork is taking too long to load.');
       }
-
-      setIsLoading(true);
-      setError(null);
-      setUrl(null);
-
-      try {
-        const readyStatus = await waitForQdnResourceReady({
-          service,
-          name,
-          identifier,
-          timeoutMs,
-          onStatusChange: (nextStatus) => {
-            if (!cancelled) {
-              setStatus(nextStatus);
-            }
-          },
-        });
-
-        if (cancelled) return;
-
-        if (!isQdnResourceReady(readyStatus.status)) {
-          setError(`Resource is not ready (${readyStatus.status}).`);
-          setIsLoading(false);
-          return;
+    }, timeoutMs);
+    // The image request starts the resource download. Do not occupy bridge
+    // slots with a polling/build loop for every visible piece of artwork.
+    void getQdnResourceUrl(service, name, identifier, {
+      signal: controller.signal,
+      priority: 'background',
+    })
+      .then((nextUrl) => {
+        if (!controller.signal.aborted) {
+          setUrl(nextUrl);
+          setStatus({ status: 'LOADING' });
         }
-
-        const nextUrl = await getQdnResourceUrl(service, name, identifier);
-        if (cancelled) return;
-
-        if (!nextUrl) {
-          setError('Resource URL could not be resolved.');
-          setIsLoading(false);
-          return;
-        }
-
-        setUrl(nextUrl);
-      } catch (loadError) {
-        if (!cancelled) {
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : 'QDN resource loading failed.'
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void load();
-
+      })
+      .catch((failure) => {
+        if (!controller.signal.aborted)
+          setError(requestError(failure, 'Artwork is unavailable.'));
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (active) setIsLoading(false);
+      });
     return () => {
-      cancelled = true;
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [enabled, identifier, name, service, timeoutMs]);
-
   return {
     url,
     status,
     isLoading,
     error,
     progress: status?.percentLoaded,
-    isReady: isQdnResourceReady(status?.status),
+    isReady: status?.status === 'READY',
+    onLoad: () => setStatus({ status: 'READY' }),
+    onError: () => {
+      setUrl(null);
+      setStatus({ status: 'UNAVAILABLE' });
+      setError('Artwork is unavailable.');
+    },
   };
 };

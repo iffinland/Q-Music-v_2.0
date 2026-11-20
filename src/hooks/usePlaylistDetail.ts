@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isAbortError } from '../services/qdnRequests';
 import { fetchPlaylistDetail } from '../services/playlists';
 import type { PlaylistDetail } from '../types/media';
 
@@ -7,8 +8,11 @@ export const usePlaylistDetail = (publisher?: string, identifier?: string) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     const load = async () => {
       if (!publisher || !identifier) {
@@ -18,11 +22,15 @@ export const usePlaylistDetail = (publisher?: string, identifier?: string) => {
         return;
       }
 
+      setPlaylist(null);
       setIsLoading(true);
       setError(null);
 
       try {
-        const result = await fetchPlaylistDetail(publisher, identifier);
+        const result = await fetchPlaylistDetail(publisher, identifier, {
+          signal: controller.signal,
+          fresh: true,
+        });
         if (cancelled) return;
 
         if (!result) {
@@ -33,7 +41,7 @@ export const usePlaylistDetail = (publisher?: string, identifier?: string) => {
 
         setPlaylist(result);
       } catch (loadError) {
-        if (!cancelled) {
+        if (!cancelled && !isAbortError(loadError)) {
           setError(
             loadError instanceof Error
               ? loadError.message
@@ -51,8 +59,14 @@ export const usePlaylistDetail = (publisher?: string, identifier?: string) => {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [identifier, publisher]);
+  }, [identifier, publisher, attempt]);
 
-  return { playlist, isLoading, error };
+  return {
+    playlist,
+    isLoading,
+    error,
+    retry: () => setAttempt((value) => value + 1),
+  };
 };

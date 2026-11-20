@@ -28,6 +28,7 @@ export interface SongSummary {
   status?: string;
   service: 'AUDIO';
   mediaType: 'SONG';
+  metadataRevision?: string;
 }
 
 export interface PlaylistSongReference {
@@ -47,7 +48,7 @@ export interface PlaylistSummary {
   created?: number;
   updated?: number;
   status?: string;
-  songCount: number;
+  songCount: number | null;
 }
 
 export interface PlaylistDetail extends PlaylistSummary {

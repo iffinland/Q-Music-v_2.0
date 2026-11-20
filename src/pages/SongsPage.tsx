@@ -11,13 +11,7 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material';
-import {
-  Fragment,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { Fragment, useDeferredValue, useMemo, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { ArtworkThumb } from '../components/common/ArtworkThumb';
@@ -27,6 +21,10 @@ import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { useSongsFeed } from '../hooks/useSongsFeed';
 import { fetchAllSongs } from '../services/songs';
+import { useMediaCatalog } from '../hooks/useMediaCatalog';
+import { mergeMedia } from '../utils/mediaIdentity';
+import { emitMediaRefresh } from '../utils/mediaEvents';
+import { songQueue } from '../utils/songQueue';
 import type { SongSummary } from '../types/media';
 import { formatSongCardMetadata } from '../utils/songMetadata';
 
@@ -135,48 +133,27 @@ export const SongsPage = () => {
   const [selectedGenre, setSelectedGenre] = useState<string>('ALL');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('ALL');
   const [selectedPublisher, setSelectedPublisher] = useState<string>('ALL');
-  const [catalogSongs, setCatalogSongs] = useState<SongSummary[]>([]);
-  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
-  const { songs, isLoading, error } = useSongsFeed(limit);
+  const [catalogRequested, setCatalogRequested] = useState(false);
+  const { songs, isLoading, error, hasMore, retry } = useSongsFeed(limit);
   const { addRecentSong } = useLibrary();
   const { playQueue } = useMiniPlayer();
   const deferredQuery = useDeferredValue(query);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadCatalog = async () => {
-      setIsCatalogLoading(true);
-
-      try {
-        const allSongs = await fetchAllSongs();
-        if (!cancelled) {
-          setCatalogSongs(allSongs);
-        }
-      } catch {
-        if (!cancelled) {
-          setCatalogSongs([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsCatalogLoading(false);
-        }
-      }
-    };
-
-    void loadCatalog();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const allAvailableSongs = catalogSongs.length ? catalogSongs : songs;
   const isExtendedSearchActive =
     Boolean(deferredQuery.trim()) ||
+    artistLetter !== 'ALL' ||
+    sortBy !== 'latest' ||
     selectedGenre !== 'ALL' ||
     selectedLanguage !== 'ALL' ||
     selectedPublisher !== 'ALL';
+  const catalog = useMediaCatalog(
+    fetchAllSongs,
+    isExtendedSearchActive || catalogRequested
+  );
+  const allAvailableSongs = useMemo(
+    () => mergeMedia(songs, catalog.items),
+    [songs, catalog.items]
+  );
 
   const alphabet = useMemo(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''), []);
   const genreOptions = useMemo(
@@ -258,37 +235,43 @@ export const SongsPage = () => {
   );
 
   const handlePreview = (trackId: string) => {
-    const queue = songs.map((track) => ({
-      key: `${track.publisher}:${track.identifier}`,
-      id: track.id,
-      identifier: track.identifier,
-      publisher: track.publisher,
-      service: 'AUDIO' as const,
-      title: track.title,
-      artist: track.artist,
-      context: track.publisher,
-    }));
-    const selected = queue.find((track) => track.id === trackId) ?? queue[0];
-    if (!selected) return;
-    const source = songs.find((track) => track.id === trackId);
-    if (source) {
-      addRecentSong(source);
-    }
-    playQueue(
-      queue,
-      queue.findIndex((track) => track.key === selected.key)
-    );
+    const queue = songQueue(visibleSongs);
+    const index = visibleSongs.findIndex((track) => track.id === trackId);
+    if (index < 0) return;
+    addRecentSong(visibleSongs[index]);
+    playQueue(queue, index);
   };
 
   return (
     <Stack spacing={3}>
       <PageHero
         eyebrow=""
-        title="Audio discovery is the first real migration target."
-        description="In the future, there will also be the option to browse stories published through Ear-Bump here."
+        title="Discover music"
+        description="Browse songs, find your favorites and listen."
       />
-      {error ? <Alert severity="warning">{error}</Alert> : null}
-      {isExtendedSearchActive && isCatalogLoading ? (
+      {error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={retry}>Retry</Button>}
+        >
+          {error}
+        </Alert>
+      ) : null}
+      {catalog.error ? (
+        <Alert
+          severity="warning"
+          action={<Button onClick={catalog.retry}>Retry search</Button>}
+        >
+          {catalog.error} Showing the results loaded so far.
+        </Alert>
+      ) : null}
+      <Button
+        onClick={emitMediaRefresh}
+        disabled={isLoading || catalog.isLoading}
+      >
+        Refresh songs
+      </Button>
+      {isExtendedSearchActive && catalog.isLoading ? (
         <Alert severity="info">
           Searching the full song catalog. More results may appear shortly.
         </Alert>
@@ -329,6 +312,7 @@ export const SongsPage = () => {
         <TextField
           select
           label="Genre"
+          slotProps={{ select: { onOpen: () => setCatalogRequested(true) } }}
           value={selectedGenre}
           onChange={(event) => setSelectedGenre(event.target.value)}
           sx={{ minWidth: { md: 180 } }}
@@ -344,6 +328,7 @@ export const SongsPage = () => {
         <TextField
           select
           label="Language"
+          slotProps={{ select: { onOpen: () => setCatalogRequested(true) } }}
           value={selectedLanguage}
           onChange={(event) => setSelectedLanguage(event.target.value)}
           sx={{ minWidth: { md: 180 } }}
@@ -359,6 +344,7 @@ export const SongsPage = () => {
         <TextField
           select
           label="Publisher"
+          slotProps={{ select: { onOpen: () => setCatalogRequested(true) } }}
           value={selectedPublisher}
           onChange={(event) => setSelectedPublisher(event.target.value)}
           sx={{ minWidth: { md: 180 } }}
@@ -398,7 +384,7 @@ export const SongsPage = () => {
         </Stack>
       </Stack>
       <Grid container spacing={2.5}>
-        {isLoading
+        {isLoading && songs.length === 0
           ? Array.from({ length: 6 }).map((_, index) => (
               <Grid key={index} size={{ xs: 12, md: 6 }}>
                 <Skeleton variant="rounded" height={220} />
@@ -464,8 +450,9 @@ export const SongsPage = () => {
             ))}
       </Grid>
       <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-        Browse All is now backed by live QDN search results for
-        `enjoymusic_song_` resources.
+        {isExtendedSearchActive && !catalog.complete
+          ? 'Search includes the songs loaded so far; more results may appear.'
+          : 'Music published on QDN.'}
       </Typography>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -481,9 +468,27 @@ export const SongsPage = () => {
         </Typography>
         <Button
           variant="contained"
-          onClick={() => setLimit((current) => current + pageSize)}
+          disabled={
+            isLoading ||
+            (isExtendedSearchActive
+              ? catalog.complete || catalog.isLoading
+              : !hasMore)
+          }
+          onClick={() =>
+            isExtendedSearchActive
+              ? catalog.retry()
+              : setLimit((current) => current + pageSize)
+          }
         >
-          Load more
+          {isLoading
+            ? 'Loading…'
+            : isExtendedSearchActive
+              ? catalog.complete
+                ? 'All search results loaded'
+                : 'Continue search'
+              : hasMore
+                ? 'Load more'
+                : 'All songs loaded'}
         </Button>
       </Stack>
     </Stack>
