@@ -1,3 +1,5 @@
+import { VolumeControl } from './VolumeControl';
+import { PublicationBadge } from '../common/PublicationBadge';
 import {
   CloseRounded,
   OpenInFullRounded,
@@ -14,11 +16,12 @@ import {
   Button,
   IconButton,
   LinearProgress,
+  Slider,
   Stack,
   Typography,
 } from '@mui/material';
 import { useAtom, useAtomValue, useSetAtom } from 'jotai';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { ImageLightbox } from '../common/ImageLightbox';
 import { useAudioPlayback } from '../../hooks/useAudioPlayback';
@@ -38,7 +41,7 @@ import {
 } from '../../state/player';
 
 const formatTime = (seconds: number) => {
-  if (!Number.isFinite(seconds) || seconds <= 0) return '--:--';
+  if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
   const wholeSeconds = Math.floor(seconds);
   const minutes = Math.floor(wholeSeconds / 60);
   const remainingSeconds = wholeSeconds % 60;
@@ -53,12 +56,16 @@ export const FloatingMiniPlayer = () => {
   const [currentTime, setCurrentTime] = useAtom(currentTimeAtom);
   const [duration, setDuration] = useAtom(durationAtom);
   const [playerError, setPlayerError] = useAtom(playerErrorAtom);
+  const streamUrl = useAtomValue(streamUrlAtom);
   const [isFloating, setIsFloating] = useAtom(isFloatingPlayerAtom);
   const [floatingPosition, setFloatingPosition] = useAtom(
     floatingPlayerPositionAtom
   );
   const [playbackAttempt, setPlaybackAttempt] = useAtom(playbackAttemptAtom);
   const volume = useAtomValue(volumeAtom);
+  const [seekPreview, setSeekPreview] = useState<number | null>(null);
+  const [seekNotice, setSeekNotice] = useState('');
+  const playerRef = useRef<HTMLDivElement>(null);
   const setCurrentTrack = useSetAtom(currentTrackAtom);
   const setQueue = useSetAtom(queueAtom);
   const setDurationValue = useSetAtom(durationAtom);
@@ -93,6 +100,7 @@ export const FloatingMiniPlayer = () => {
   const {
     status: resourceStatusLabel,
     buffering,
+    seek,
     setPlaying,
     stop,
   } = useAudioPlayback({
@@ -116,11 +124,17 @@ export const FloatingMiniPlayer = () => {
     setIsPlaying(true);
   };
 
+  useEffect(() => {
+    setSeekPreview(null);
+    setSeekNotice('');
+  }, [currentTrack?.key, playbackAttempt]);
+
   const clampFloatingPosition = useCallback((x: number, y: number) => {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const playerWidth = Math.min(360, viewportWidth - 24);
-    const playerHeight = 166;
+    const playerHeight =
+      playerRef.current?.getBoundingClientRect().height || 300;
 
     return {
       x: Math.min(
@@ -235,12 +249,21 @@ export const FloatingMiniPlayer = () => {
     return null;
   }
 
-  const progressValue =
-    duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const canSeek =
+    Boolean(streamUrl) &&
+    Number.isFinite(duration) &&
+    duration > 0 &&
+    !playerError;
+  const seekMaximum = canSeek ? duration : 1;
+  const seekValue = Math.max(
+    0,
+    Math.min(seekMaximum, seekPreview ?? currentTime)
+  );
   const artwork = currentTrack.artworkUrl || null;
 
   return (
     <Box
+      ref={playerRef}
       onPointerUp={(event) => {
         if (dragStateRef.current?.pointerId === event.pointerId) {
           stopFloatingDrag();
@@ -255,6 +278,8 @@ export const FloatingMiniPlayer = () => {
         bottom: isFloating ? 'auto' : { xs: 12, md: 20 },
         width: isFloating ? { xs: 'calc(100vw - 24px)', sm: 360 } : 'auto',
         maxWidth: isFloating ? 'calc(100vw - 24px)' : 'none',
+        maxHeight: 'calc(100dvh - 24px)',
+        overflowY: 'auto',
         zIndex: 1400,
         border: '1px solid',
         borderColor: 'divider',
@@ -330,6 +355,7 @@ export const FloatingMiniPlayer = () => {
             >
               {isFloating ? 'FLOAT PLAYER' : 'MINI PLAYER'}
             </Typography>
+            <PublicationBadge identifier={currentTrack.identifier} />
             <Typography variant="h6" noWrap>
               {currentTrack.title}
             </Typography>
@@ -342,6 +368,7 @@ export const FloatingMiniPlayer = () => {
             <IconButton
               color="inherit"
               size="small"
+              aria-label={isFloating ? 'Dock player' : 'Float player'}
               onClick={() => {
                 if (!isFloating) {
                   setFloatingPosition(clampFloatingPosition(20, 20));
@@ -394,6 +421,7 @@ export const FloatingMiniPlayer = () => {
           >
             <SkipNextRounded />
           </IconButton>
+          <VolumeControl />
         </Stack>
         <Stack
           direction="row"
@@ -409,7 +437,8 @@ export const FloatingMiniPlayer = () => {
             Queue {queueLength}
           </Typography>
           <Typography variant="body2">
-            {formatTime(currentTime)} / {formatTime(duration)}
+            {formatTime(seekPreview ?? currentTime)} /{' '}
+            {formatTime(duration || NaN)}
           </Typography>
         </Stack>
       </Stack>
@@ -428,16 +457,33 @@ export const FloatingMiniPlayer = () => {
           />
         </Stack>
       ) : null}
-      <LinearProgress
-        variant="determinate"
-        value={progressValue}
-        sx={{
-          mt: 1.5,
-          height: 6,
-          borderRadius: 999,
-          backgroundColor: 'var(--qm-surface-soft-strong)',
-        }}
-      />
+      <Box data-no-drag sx={{ px: 1, mt: 0.5 }}>
+        <Slider
+          aria-label="Song position"
+          min={0}
+          max={seekMaximum}
+          step={1}
+          value={seekValue}
+          disabled={!canSeek}
+          getAriaValueText={(value) => formatTime(value)}
+          valueLabelDisplay="auto"
+          valueLabelFormat={formatTime}
+          onChange={(_, value) => setSeekPreview(value as number)}
+          onChangeCommitted={(_, value) => {
+            if (!seek(value as number))
+              setSeekNotice(
+                'Seeking is not available yet. Please wait for audio to load.'
+              );
+            else setSeekNotice('');
+            setSeekPreview(null);
+          }}
+        />
+      </Box>
+      {seekNotice ? (
+        <Typography role="status" variant="caption">
+          {seekNotice}
+        </Typography>
+      ) : null}
     </Box>
   );
 };

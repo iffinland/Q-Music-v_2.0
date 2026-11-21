@@ -82,6 +82,7 @@ export const HomePage = () => {
           : songs.slice(0, 2).map((track) => (
               <Grid key={track.id} size={{ xs: 12, md: 6 }}>
                 <SectionCard
+                  originIdentifier={track.identifier}
                   kicker={track.artist}
                   title={track.title}
                   media={
@@ -156,6 +157,7 @@ export const HomePage = () => {
             <Skeleton variant="rounded" height={220} />
           ) : playlists[0] ? (
             <SectionCard
+              originIdentifier={playlists[0].identifier}
               kicker="LATEST PLAYLIST"
               title={playlists[0].title}
               media={

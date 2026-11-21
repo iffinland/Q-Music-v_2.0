@@ -1,3 +1,4 @@
+import { isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { Alert, Button, Grid, Stack, Typography } from '@mui/material';
 import { useGlobal } from '../qortal';
 import { useState } from 'react';
@@ -68,6 +69,7 @@ export const MyMusicPage = () => {
                 {songs.map((song) => (
                   <Grid key={song.id} size={{ xs: 12, md: 6 }}>
                     <SectionCard
+                      originIdentifier={song.identifier}
                       kicker={song.artist}
                       title={song.title}
                       media={
@@ -98,14 +100,16 @@ export const MyMusicPage = () => {
                           >
                             Open
                           </Button>
-                          <Button
-                            component={RouterLink}
-                            to={`/my-music/songs/${encodeURIComponent(song.identifier)}/edit`}
-                            variant="contained"
-                            fullWidth
-                          >
-                            Edit song
-                          </Button>
+                          {!isEarBumpIdentifier(song.identifier) && (
+                            <Button
+                              component={RouterLink}
+                              to={`/my-music/songs/${encodeURIComponent(song.identifier)}/edit`}
+                              variant="contained"
+                              fullWidth
+                            >
+                              Edit song
+                            </Button>
+                          )}
                         </Stack>
                       }
                     />
@@ -135,6 +139,7 @@ export const MyMusicPage = () => {
                 {playlists.map((playlist) => (
                   <Grid key={playlist.id} size={{ xs: 12, md: 4 }}>
                     <SectionCard
+                      originIdentifier={playlist.identifier}
                       kicker={playlist.publisher}
                       title={playlist.title}
                       media={
@@ -166,14 +171,16 @@ export const MyMusicPage = () => {
                           >
                             Open
                           </Button>
-                          <Button
-                            component={RouterLink}
-                            to={`/my-music/playlists/${encodeURIComponent(playlist.identifier)}/edit`}
-                            variant="contained"
-                            fullWidth
-                          >
-                            Edit playlist
-                          </Button>
+                          {!isEarBumpIdentifier(playlist.identifier) && (
+                            <Button
+                              component={RouterLink}
+                              to={`/my-music/playlists/${encodeURIComponent(playlist.identifier)}/edit`}
+                              variant="contained"
+                              fullWidth
+                            >
+                              Edit playlist
+                            </Button>
+                          )}
                         </Stack>
                       }
                     />

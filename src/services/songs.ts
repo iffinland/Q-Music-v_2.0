@@ -1,3 +1,4 @@
+import { SONG_PREFIXES, matchingMediaPrefix } from '../utils/mediaOrigin';
 import {
   MAX_AUTOMATIC_AUDIO_REUSE_BYTES,
   readBoundedAudio,
@@ -12,10 +13,12 @@ import type { QdnSearchResource, SongSummary } from '../types/media';
 import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 import { parseSongMetadata } from '../utils/songMetadata';
 import { mediaKey, mergeMedia } from '../utils/mediaIdentity';
-import { readMediaPage, type MediaPageOptions } from './mediaPages';
+import {
+  readMediaPrefixesPage,
+  type MediaPageOptions,
+  type MediaCursor,
+} from './mediaPages';
 import { throwIfAborted, type ReadOptions } from './qdnRequests';
-
-const SONG_PREFIX = 'enjoymusic_song_';
 
 const inferAudioExtension = (contentType?: string) => {
   if (!contentType) return 'mp3';
@@ -93,7 +96,10 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
       metadataTitle ||
       resourceTitle ||
       parsedDescription.title ||
-      buildTitleFromIdentifier(identifier, SONG_PREFIX),
+      buildTitleFromIdentifier(
+        identifier,
+        matchingMediaPrefix(identifier, 'song')
+      ),
     artist: parsedDescription.author || publisher,
     album: parsedDescription.album,
     genre: parsedDescription.genre,
@@ -119,7 +125,7 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
 };
 
 export const fetchSongsPage = (options: MediaPageOptions = {}) =>
-  readMediaPage('AUDIO', SONG_PREFIX, mapSongResource, options);
+  readMediaPrefixesPage('AUDIO', SONG_PREFIXES, mapSongResource, options);
 export const fetchSongs = async (options: MediaPageOptions = {}) =>
   (await fetchSongsPage(options)).items;
 export const fetchAllSongs = async (
@@ -127,6 +133,7 @@ export const fetchAllSongs = async (
 ): Promise<SongSummary[]> => {
   let allSongs: SongSummary[] = [];
   let offset = 0;
+  let cursor: MediaCursor | undefined;
   const before = options.before ?? Date.now() + 1;
   while (true) {
     const page = await fetchSongsPage({
@@ -134,12 +141,14 @@ export const fetchAllSongs = async (
       before,
       limit: 100,
       offset,
+      cursor,
     });
     throwIfAborted(options.signal);
     allSongs = mergeMedia(allSongs, page.items);
     options.onPage?.(allSongs);
     if (!page.hasMore) return allSongs;
     offset = page.nextOffset;
+    cursor = page.nextCursor;
   }
 };
 export const fetchSongsByPublisher = (

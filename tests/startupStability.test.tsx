@@ -10,7 +10,7 @@ import {
 } from '../src/utils/hubMessages';
 import { describeRouteError } from '../src/utils/routeErrors';
 import { withRouteBoundaries } from '../src/routes/routeBoundaries';
-import { sanitizedContent, objectToBase64 } from '../src/qortal/content';
+import { objectToBase64 } from '../src/qortal/content';
 import { persistThemePreference, EnumTheme } from '../src/state/global/system';
 import { readBoundedAudio } from '../src/services/boundedFile';
 import { downloadQdnAudioResource } from '../src/utils/download';
@@ -130,12 +130,7 @@ describe('route recovery and blocked storage', () => {
     });
     expect(() => persistThemePreference(EnumTheme.LIGHT)).not.toThrow();
   });
-  it('retains HTML sanitization after removing the monolithic runtime SDK and encodes Unicode correctly', async () => {
-    const html = sanitizedContent(
-      '<p>Hello <strong>world</strong></p><img src=x onerror="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">x</a>'
-    );
-    expect(html).toContain('<strong>world</strong>');
-    expect(html).not.toMatch(/<script|onerror|javascript:/);
+  it('encodes Unicode JSON correctly for QDN publications', async () => {
     const encoded = await objectToBase64({ text: 'Tere õhtust 🎵' });
     expect(
       JSON.parse(

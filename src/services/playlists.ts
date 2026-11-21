@@ -1,4 +1,10 @@
 import {
+  PLAYLIST_PREFIXES,
+  matchingMediaPrefix,
+  isEarBumpIdentifier,
+  safeEarBumpImage,
+} from '../utils/mediaOrigin';
+import {
   fetchQdnResource,
   getQdnResourceUrl,
   findExactQdnResource,
@@ -6,7 +12,11 @@ import {
   waitForQdnResourceReady,
 } from './qdn';
 import { mediaKey, mergeMedia } from '../utils/mediaIdentity';
-import { readMediaPage, type MediaPageOptions } from './mediaPages';
+import {
+  readMediaPrefixesPage,
+  type MediaPageOptions,
+  type MediaCursor,
+} from './mediaPages';
 import { throwIfAborted, type ReadOptions } from './qdnRequests';
 import type {
   PlaylistDetail,
@@ -16,9 +26,8 @@ import type {
 } from '../types/media';
 import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 
-const PLAYLIST_PREFIX = 'enjoymusic_playlist_';
-
 interface RawPlaylistSong {
+  service?: string;
   identifier?: string;
   id?: string;
   name?: string;
@@ -30,6 +39,7 @@ interface RawPlaylistSong {
 
 interface RawPlaylistPayload {
   songs?: RawPlaylistSong[];
+  image?: unknown;
   title?: string;
   description?: string;
   publishedDate?: string;
@@ -50,7 +60,10 @@ const mapPlaylistSummary = (
   const title =
     normalizeString(resource.metadata?.title) ||
     normalizeString(resource.title) ||
-    buildTitleFromIdentifier(identifier, PLAYLIST_PREFIX);
+    buildTitleFromIdentifier(
+      identifier,
+      matchingMediaPrefix(identifier, 'playlist')
+    );
 
   const description =
     normalizeString(resource.metadata?.description) ||
@@ -102,12 +115,20 @@ export const resolvePlaylistSongCount = async (
   publisher: string,
   identifier: string,
   options: ReadOptions = {}
-) => (await loadPlaylistPayload(publisher, identifier, options)).songs!.length;
+) =>
+  (await loadPlaylistPayload(publisher, identifier, options))
+    .songs!.map(mapPlaylistSongReference)
+    .filter(Boolean).length;
 
 const mapPlaylistSongReference = (
   song: RawPlaylistSong
 ): PlaylistSongReference | null => {
-  if (!song || typeof song !== 'object') return null;
+  if (
+    !song ||
+    typeof song !== 'object' ||
+    (song.service && song.service !== 'AUDIO')
+  )
+    return null;
   const identifier = normalizeString(song.identifier || song.id);
   const publisher = normalizeString(song.name || song.publisher);
   if (!identifier || !publisher) return null;
@@ -118,13 +139,21 @@ const mapPlaylistSongReference = (
     publisher,
     title:
       normalizeString(song.title) ||
-      buildTitleFromIdentifier(identifier, 'enjoymusic_song_'),
+      buildTitleFromIdentifier(
+        identifier,
+        matchingMediaPrefix(identifier, 'song')
+      ),
     artist: normalizeString(song.author || song.artist) || publisher,
   };
 };
 
 export const fetchPlaylistsPage = (options: MediaPageOptions = {}) =>
-  readMediaPage('PLAYLIST', PLAYLIST_PREFIX, mapPlaylistSummary, options);
+  readMediaPrefixesPage(
+    'PLAYLIST',
+    PLAYLIST_PREFIXES,
+    mapPlaylistSummary,
+    options
+  );
 export const fetchPlaylists = async (
   options: MediaPageOptions = {}
 ): Promise<PlaylistSummary[]> => (await fetchPlaylistsPage(options)).items;
@@ -139,6 +168,7 @@ export const fetchAllPlaylists = async (
 ) => {
   let items: PlaylistSummary[] = [];
   let offset = 0;
+  let cursor: MediaCursor | undefined;
   const before = options.before ?? Date.now() + 1;
   while (true) {
     const page = await fetchPlaylistsPage({
@@ -146,12 +176,14 @@ export const fetchAllPlaylists = async (
       before,
       limit: 100,
       offset,
+      cursor,
     });
     throwIfAborted(options.signal);
     items = mergeMedia(items, page.items);
     options.onPage?.(items);
     if (!page.hasMore) return items;
     offset = page.nextOffset;
+    cursor = page.nextCursor;
   }
 };
 export const fetchPlaylistDetail = async (
@@ -177,6 +209,9 @@ export const fetchPlaylistDetail = async (
     description: normalizeString(payload.description) || summary.description,
     publishedDate:
       normalizeString(payload.publishedDate) || summary.publishedDate,
+    image: isEarBumpIdentifier(identifier)
+      ? safeEarBumpImage(payload.image)
+      : undefined,
     songCount: songs.length,
     songs,
   };

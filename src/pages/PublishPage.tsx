@@ -1,3 +1,5 @@
+import { PublicationBadge } from '../components/common/PublicationBadge';
+import { isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import {
   Alert,
@@ -200,7 +202,19 @@ const SongPicker = ({
                 }
               />
             }
-            label={`${song.title} • ${song.artist}`}
+            label={
+              <Stack
+                direction="row"
+                spacing={0.75}
+                alignItems="center"
+                flexWrap="wrap"
+              >
+                <span>
+                  {song.title} • {song.artist}
+                </span>
+                <PublicationBadge identifier={song.identifier} />
+              </Stack>
+            }
           />
         ))}
         {!visible.length && !feed.isLoading && (
@@ -244,7 +258,8 @@ const OwnedPlaylists = ({
         {feed.playlists
           .filter(
             (playlist) =>
-              playlist.publisher.toLowerCase() === publisher.toLowerCase()
+              playlist.publisher.toLowerCase() === publisher.toLowerCase() &&
+              !isEarBumpIdentifier(playlist.identifier)
           )
           .map((playlist) => (
             <MenuItem key={playlist.identifier} value={playlist.identifier}>

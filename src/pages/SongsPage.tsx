@@ -393,6 +393,7 @@ export const SongsPage = () => {
           : visibleSongs.map((track: SongSummary) => (
               <Grid key={track.id} size={{ xs: 12, md: 6 }}>
                 <SectionCard
+                  originIdentifier={track.identifier}
                   kicker={highlightText(track.artist, highlightedTerms)}
                   title={highlightText(track.title, highlightedTerms)}
                   media={

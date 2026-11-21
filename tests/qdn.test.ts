@@ -60,30 +60,43 @@ describe('QDN loading contracts', () => {
   });
   it('consumes raw offsets past hidden rows, and scans later catalog pages', async () => {
     request.mockImplementation(async (p) =>
-      p.offset === 0
-        ? [
-            ...Array.from({ length: 99 }, (_, i) =>
-              resource(`enjoymusic_song_${i}`)
-            ),
-            {
-              ...resource('enjoymusic_song_deleted'),
-              metadata: { title: 'deleted' },
-            },
-          ]
-        : p.offset === 100
-          ? [resource('enjoymusic_song_last')]
-          : []
+      p.identifier === 'earbump_song_'
+        ? []
+        : p.offset === 0
+          ? [
+              ...Array.from({ length: 99 }, (_, i) =>
+                resource(`enjoymusic_song_${i}`)
+              ),
+              {
+                ...resource('enjoymusic_song_deleted'),
+                metadata: { title: 'deleted' },
+              },
+            ]
+          : p.offset === 100
+            ? [resource('enjoymusic_song_last')]
+            : []
     );
     const songs = await fetchAllSongs();
     expect(songs).toHaveLength(100);
     expect(songs.at(-1)?.identifier).toBe('enjoymusic_song_last');
-    expect(request.mock.calls.map(([p]) => p.offset)).toEqual([0, 100, 101]);
+    expect(
+      request.mock.calls
+        .filter(([p]) => p.identifier === 'enjoymusic_song_')
+        .map(([p]) => p.offset)
+    ).toEqual([0, 100]);
+    expect(
+      request.mock.calls.some(([p]) => p.identifier === 'earbump_song_')
+    ).toBe(true);
   });
   it('preserves two publishers with the same identifier', async () => {
-    request.mockResolvedValue([
-      resource('enjoymusic_song_same', 'A'),
-      resource('enjoymusic_song_same', 'B'),
-    ]);
+    request.mockImplementation(async (p) =>
+      p.identifier === 'enjoymusic_song_'
+        ? [
+            resource('enjoymusic_song_same', 'A'),
+            resource('enjoymusic_song_same', 'B'),
+          ]
+        : []
+    );
     const page = await fetchSongsPage({ limit: 10 });
     expect(new Set(page.items.map((item) => item.id)).size).toBe(2);
     expect(page.nextOffset).toBe(2);
@@ -106,11 +119,16 @@ describe('QDN loading contracts', () => {
   it('returns playlist cards without downloading or building their payloads', async () => {
     request.mockImplementation(async (p) => {
       expect(p.action).toBe('SEARCH_QDN_RESOURCES');
-      return [resource('enjoymusic_playlist_one')];
+      return p.identifier === 'enjoymusic_playlist_'
+        ? [resource('enjoymusic_playlist_one')]
+        : [];
     });
     const playlists = await fetchPlaylists({ limit: 24 });
     expect(playlists[0].songCount).toBeNull();
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(
+      request.mock.calls.every(([p]) => p.action === 'SEARCH_QDN_RESOURCES')
+    ).toBe(true);
   });
   it('rejects an unavailable playlist rather than making it an empty writable playlist', async () => {
     request.mockImplementation(async (p) =>

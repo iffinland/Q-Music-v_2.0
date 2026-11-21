@@ -152,6 +152,7 @@ export const PlaylistsPage = () => {
           : visiblePlaylists.map((playlist) => (
               <Grid key={playlist.id} size={{ xs: 12, md: 4 }}>
                 <SectionCard
+                  originIdentifier={playlist.identifier}
                   kicker={playlist.publisher}
                   title={playlist.title}
                   media={

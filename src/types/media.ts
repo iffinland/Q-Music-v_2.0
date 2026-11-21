@@ -52,5 +52,6 @@ export interface PlaylistSummary {
 }
 
 export interface PlaylistDetail extends PlaylistSummary {
+  image?: string;
   songs: PlaylistSongReference[];
 }

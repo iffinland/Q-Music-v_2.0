@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MediaPage, MediaPageOptions } from '../services/mediaPages';
+import type {
+  MediaPage,
+  MediaPageOptions,
+  MediaCursor,
+} from '../services/mediaPages';
 import { isAbortError, requestError } from '../services/qdnRequests';
 import { mergeMedia } from '../utils/mediaIdentity';
 import { subscribeToMediaRefresh } from '../utils/mediaEvents';
@@ -17,6 +21,7 @@ export const useMediaFeed = <T extends { id: string }>(
   const [retryTick, setRetryTick] = useState(0);
   const cursor = useRef({
     items: [] as T[],
+    sourceCursor: undefined as MediaCursor | undefined,
     offset: 0,
     hasMore: true,
     before: Date.now() + 1,
@@ -31,6 +36,7 @@ export const useMediaFeed = <T extends { id: string }>(
     ) {
       cursor.current = {
         items: [],
+        sourceCursor: undefined as MediaCursor | undefined,
         offset: 0,
         hasMore: true,
         before: Date.now() + 1,
@@ -54,6 +60,7 @@ export const useMediaFeed = <T extends { id: string }>(
           const page = await loadPage({
             limit: Math.min(100, limit - cursor.current.items.length),
             offset: cursor.current.offset,
+            cursor: cursor.current.sourceCursor,
             before: cursor.current.before,
             publisher,
             signal: controller.signal,
@@ -61,6 +68,7 @@ export const useMediaFeed = <T extends { id: string }>(
           if (controller.signal.aborted) return;
           cursor.current.items = mergeMedia(cursor.current.items, page.items);
           cursor.current.offset = page.nextOffset;
+          cursor.current.sourceCursor = page.nextCursor;
           cursor.current.hasMore = page.hasMore;
           setItems([...cursor.current.items]);
         }

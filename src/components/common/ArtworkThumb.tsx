@@ -1,3 +1,4 @@
+import { isEarBumpIdentifier } from '../../utils/mediaOrigin';
 import { Box, Skeleton, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { useQdnResource } from '../../hooks/useQdnResource';
@@ -20,7 +21,8 @@ export const ArtworkThumb = ({
   size = 72,
   radius = 2,
 }: ArtworkThumbProps) => {
-  void kind;
+  const embeddedPlaylistCover =
+    kind === 'playlist' && isEarBumpIdentifier(identifier);
   const resourceService = 'THUMBNAIL';
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -33,7 +35,7 @@ export const ArtworkThumb = ({
     service: resourceService,
     name: publisher,
     identifier,
-    enabled: isVisible,
+    enabled: isVisible && !embeddedPlaylistCover,
     timeoutMs: 30_000,
   });
 

@@ -1,3 +1,4 @@
+import { isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { isAbortError, throwIfAborted } from '../services/qdnRequests';
 import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
 import { useGlobal } from '../qortal';
@@ -74,6 +75,7 @@ export const EditSongPage = () => {
   }, [song]);
 
   const handleSave = async () => {
+    if (isEarBumpIdentifier(decodedIdentifier)) return;
     if (
       !song ||
       isMetadataLoading ||
@@ -158,6 +160,14 @@ export const EditSongPage = () => {
       }
     }
   };
+
+  if (isEarBumpIdentifier(decodedIdentifier))
+    return (
+      <Alert severity="info">
+        Ear-Bump publications can be played and saved in Q-Music. Use Ear-Bump
+        to edit the original publication.
+      </Alert>
+    );
 
   return (
     <Stack spacing={3}>

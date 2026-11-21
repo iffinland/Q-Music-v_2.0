@@ -1,3 +1,4 @@
+import { isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { throwIfAborted } from '../services/qdnRequests';
 import { useGlobal } from '../qortal';
 import { useRef } from 'react';
@@ -114,6 +115,8 @@ export const useMediaPublish = () => {
   const buildSongPublish = async (
     input: PublishSongInput
   ): Promise<PreparedSongPublish> => {
+    if (isEarBumpIdentifier(input.existingIdentifier))
+      throw new Error('Edit the original Ear-Bump publication in Ear-Bump.');
     const publisher = ensurePublisher(),
       title = text(input.title),
       artist = text(input.artist);
@@ -206,6 +209,8 @@ export const useMediaPublish = () => {
   const buildPlaylistPublish = async (
     input: PublishPlaylistInput
   ): Promise<PreparedPlaylistPublish> => {
+    if (isEarBumpIdentifier(input.existingIdentifier))
+      throw new Error('Edit the original Ear-Bump publication in Ear-Bump.');
     const publisher = ensurePublisher(),
       title = text(input.title),
       description = input.description?.trim() || '';

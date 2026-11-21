@@ -3,22 +3,45 @@
 Qortal music browsing, playlists and audio playback, built with React, TypeScript
 and Vite.
 
-Current version: **2.0.2**. All five repair phases passed the user's Android/Hub
+Public release: **2.0.3**.
+
+The user accepted the final RC4 Android/Hub runtime test on 2026-11-21 and
+approved publishing this release. It adds Ear-Bump listening/browsing, clear
+publication labels, bounded audio start recovery, seeking and compact volume
+controls. See [release notes](docs/release-2.0.3.md) and
+[verification evidence](docs/verification-2.0.3.md).
+
+The 2.0.2 release: All five repair phases passed the user's Android/Hub
 runtime tests on 2026-11-20, including substantially improved loading speed.
 
 ## Downloads
 
 - [Latest release](https://github.com/iffinland/Q-Music-v_2.0/releases/latest)
-- [Q-Music 2.0.2 — deployable Q-App ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.2/Q-Music_2.0.2.zip)
-- [Source ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.2/Q-Music_2.0.2_source.zip)
-- [SHA-256 checksums](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.2/SHA256SUMS.txt)
+- [Q-Music 2.0.3 — deployable Q-App ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.3/Q-Music_2.0.3.zip)
+- [Source ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.3/Q-Music_2.0.3_source.zip)
+- [SHA-256 checksums](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.3/SHA256SUMS.txt)
 
-Use `Q-Music_2.0.2.zip` for Q-App publishing/loading. It contains the production
+Use `Q-Music_2.0.3.zip` for Q-App publishing/loading. It contains the production
 files directly at its root, with `index.html`. The source ZIP and GitHub's
 automatic source archives are development sources, not deployable Q-Apps.
-After loading the app, verify **2.0.2** under the logo.
+After loading the app, verify **v2.0.3** at the bottom of the navigation sidebar.
+The version is no longer shown below the logo.
 
 ## What changed
+
+New in 2.0.3:
+
+- Browse and play Ear-Bump songs/playlists alongside Q-Music, with explicit
+  **Published @ Ear-Bump** / **Published @ Q-Music** labels. Ear-Bump originals
+  remain read-only; they can be included in new Q-Music playlists.
+- Failed audio startup can wait for QDN readiness and automatically retry up to
+  twice; uncertain media errors no longer assert an unsupported format.
+- Seek by touch, mouse or keyboard. Open the speaker icon beside playback buttons
+  for volume, the widening level graphic and Mute/Unmute.
+- The sidebar shows the build version from package.json; the in-app change-log
+  system and logo version are removed.
+
+Retained from 2.0.2:
 
 - Songs/playlists use raw pagination and full resource identity; an unavailable
   playlist does not turn into an empty playlist or block the whole catalog.
@@ -34,9 +57,9 @@ After loading the app, verify **2.0.2** under the logo.
 - Account/balance requests, page recovery, Hub messages, download memory and stale
   async work have additional guards.
 
-See [release notes and remaining limits](docs/release-2.0.2.md),
+See [release notes and remaining limits](docs/release-2.0.3.md),
 [change history](CHANGELOG.md), [audit resolution](docs/audit-resolution.md), and
-[verification evidence](docs/verification-2.0.2.md).
+[verification evidence](docs/verification-2.0.3.md).
 
 ## File sizes and compatibility
 
@@ -76,7 +99,8 @@ npm run preview
 
 `dist/` contains the deployable app. Runtime font assets are checked in; normal
 builds do not need font conversion. qapp-core is development-only for native
-bridge types; DOMPurify remains active for sanitizing HTML.
+bridge types. The unused in-app change-log HTML renderer and DOMPurify runtime
+dependency were removed.
 
 ## Release workflow
 
@@ -84,7 +108,8 @@ A stable version update on `main` triggers [Release](.github/workflows/release.y
 It performs a clean install, lint, all regression tests and build before packaging
 runtime/source ZIPs, recording the commit and checksums, and publishing a GitHub
 Release tagged to that exact commit. Existing public releases are not overwritten.
-RC versions are skipped. The workflow can also be run manually from `main`.
+RC versions are skipped. The build reads the release version from `package.json`;
+update it and the lockfile together with `npm version X.Y.Z --no-git-tag-version`. The workflow can also be run manually from `main`.
 
 For local packaging from a clean committed checkout:
 

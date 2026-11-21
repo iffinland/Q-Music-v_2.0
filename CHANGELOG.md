@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.0.3 — 2026-11-21
+
+- Restore Ear-Bump song/playlist discovery and playback with independent catalog
+  pagination, embedded playlist art support and read-only original publications.
+- Label recognized publications Published @ Ear-Bump or Published @ Q-Music.
+- Recover initial media errors with fresh isolated audio attempts, QDN readiness
+  checks and up to two automatic retries; use neutral load-error messages.
+- Add accessible song seeking and a compact speaker volume popup with a widening
+  level graphic, percentage, mute and restore.
+- Remove the in-app change-log system and logo version. The sidebar version and
+  document title are generated from package.json at build time.
+- Retain all accepted 2.0.2 repairs. Final RC4 runtime PASSED; 250 automated tests.
+- No Core/Hub changes. QDN availability, codecs and stream/range support remain
+  platform constraints; seeking does not fetch a complete audio blob.
+
 ## 2.0.2 — 2026-11-20
 
 Consolidates the user-accepted listening/browsing, publishing (RC3),

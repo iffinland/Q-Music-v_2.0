@@ -13,7 +13,8 @@ assert not subprocess.check_output(['git', 'status', '--porcelain'], cwd=root).s
 commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
 dist = root / 'dist'
 assert f'Q-Music {version}' in (dist / 'index.html').read_text(), 'Build version does not match.'
-assert f"appVersion = '{version}'" in (root / 'src/qapp-config.ts').read_text()
+assert "appVersion = import.meta.env.VITE_APP_VERSION" in (root / 'src/qapp-config.ts').read_text()
+assert json.loads((root / 'package-lock.json').read_text())['version'] == version
 assert (dist / 'fonts-OFL.txt').is_file()
 assert not (dist / 'sw-video-decrypt.js').exists()
 assert not list((dist / 'assets').glob('*qapp-core*'))

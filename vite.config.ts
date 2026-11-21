@@ -1,9 +1,19 @@
+import packageInfo from './package.json';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// https://vite.dev/config/
+const { version } = packageInfo;
+
+// package.json is the single version source for the bundle and document title.
 export default defineConfig({
-  plugins: [react()],
+  define: { 'import.meta.env.VITE_APP_VERSION': JSON.stringify(version) },
+  plugins: [
+    react(),
+    {
+      name: 'qmusic-build-version',
+      transformIndexHtml: (html) => html.replaceAll('__APP_VERSION__', version),
+    },
+  ],
   base: '',
   optimizeDeps: {
     include: ['@mui/material', '@mui/styled-engine', '@mui/system'],

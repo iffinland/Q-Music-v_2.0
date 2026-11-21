@@ -54,7 +54,7 @@ export interface QdnResourceStatus {
   percentLoaded?: number;
 }
 
-const TRACKING_PREFIXES = ['enjoymusic_', 'qmusic_'];
+const TRACKING_PREFIXES = ['enjoymusic_', 'qmusic_', 'earbump_'];
 const LIKE_ARTIFACT_PREFIXES = [
   'song_like_',
   'playlist_like_',

@@ -1,3 +1,5 @@
+import { PublicationBadge } from '../components/common/PublicationBadge';
+import { matchingMediaPrefix, isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { useState as useCommentState } from 'react';
 import {
   Alert,
@@ -39,10 +41,12 @@ import { buildTitleFromIdentifier } from '../utils/mediaTitles';
 import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
 import { buildShareLink, copyToClipboard } from '../utils/share';
 
-const SONG_PREFIX = 'enjoymusic_song_';
-
 const resolvePlaylistSongTitle = (song: PlaylistSongReference) =>
-  song.title || buildTitleFromIdentifier(song.identifier, SONG_PREFIX);
+  song.title ||
+  buildTitleFromIdentifier(
+    song.identifier,
+    matchingMediaPrefix(song.identifier, 'song')
+  );
 
 export const PlaylistDetailPage = () => {
   const { name, playlistId } = useParams();
@@ -56,16 +60,23 @@ export const PlaylistDetailPage = () => {
     decodedIdentifier
   );
   const {
-    url: artworkUrl,
+    url: thumbnailUrl,
     isLoading: artworkLoading,
     status: artworkStatus,
   } = useQdnResource({
     service: 'THUMBNAIL',
     name: decodedPublisher,
     identifier: decodedIdentifier,
-    enabled: Boolean(decodedPublisher && decodedIdentifier),
+    enabled: Boolean(
+      decodedPublisher &&
+        decodedIdentifier &&
+        !isEarBumpIdentifier(decodedIdentifier)
+    ),
     timeoutMs: 30_000,
   });
+  const artworkUrl = isEarBumpIdentifier(decodedIdentifier)
+    ? playlist?.image
+    : thumbnailUrl;
   const { playQueue, playTrack } = useMiniPlayer();
   const [orderedSongs, setOrderedSongs] = useState<PlaylistSongReference[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -131,9 +142,14 @@ export const PlaylistDetailPage = () => {
   }, [playlist]);
 
   const isOwner = useMemo(() => {
-    if (!auth?.name || !playlist?.publisher) return false;
+    if (
+      !auth?.name ||
+      !playlist?.publisher ||
+      isEarBumpIdentifier(playlist.identifier)
+    )
+      return false;
     return auth.name.toLowerCase() === playlist.publisher.toLowerCase();
-  }, [auth?.name, playlist?.publisher]);
+  }, [auth?.name, playlist?.publisher, playlist?.identifier]);
 
   const playlistQueue = useMemo(
     () =>
@@ -320,6 +336,7 @@ export const PlaylistDetailPage = () => {
             ) : null}
             <Grid size={{ xs: 12, md: artworkUrl ? 8 : 12 }}>
               <SectionCard
+                originIdentifier={playlist.identifier}
                 kicker="PLAYLIST META"
                 title={playlist.title}
                 body={formatPlaylistCardMetadata({
@@ -435,6 +452,7 @@ export const PlaylistDetailPage = () => {
                 }}
               >
                 <Stack spacing={0.35}>
+                  <PublicationBadge identifier={song.identifier} />
                   <Typography variant="body1" sx={{ lineHeight: 1.25 }}>
                     {index + 1}. {resolvePlaylistSongTitle(song)}
                   </Typography>

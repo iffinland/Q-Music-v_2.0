@@ -1,3 +1,4 @@
+import { matchingMediaPrefix, isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { Alert, Button, Stack, TextField, Typography } from '@mui/material';
 import { useGlobal } from '../qortal';
 import { useEffect, useMemo, useState } from 'react';
@@ -18,8 +19,6 @@ import {
   PLAYLIST_LIMIT_TEXT,
 } from '../utils/publishLimits';
 
-const SONG_PREFIX = 'enjoymusic_song_';
-
 const toSongKey = (song: { publisher: string; identifier: string }) =>
   `${song.publisher}:${song.identifier}`;
 
@@ -27,7 +26,11 @@ const isSongSummary = (song: SongSummary | undefined): song is SongSummary =>
   Boolean(song);
 
 const resolveSongTitle = (song: { title?: string; identifier: string }) =>
-  song.title || buildTitleFromIdentifier(song.identifier, SONG_PREFIX);
+  song.title ||
+  buildTitleFromIdentifier(
+    song.identifier,
+    matchingMediaPrefix(song.identifier, 'song')
+  );
 
 export const EditPlaylistPage = () => {
   const { auth } = useGlobal();
@@ -130,6 +133,7 @@ export const EditPlaylistPage = () => {
   };
 
   const handleSave = async () => {
+    if (isEarBumpIdentifier(decodedIdentifier)) return;
     if (!playlist) return;
 
     setIsSaving(true);
@@ -171,6 +175,14 @@ export const EditPlaylistPage = () => {
       setIsSaving(false);
     }
   };
+
+  if (isEarBumpIdentifier(decodedIdentifier))
+    return (
+      <Alert severity="info">
+        Ear-Bump publications can be played and saved in Q-Music. Use Ear-Bump
+        to edit the original publication.
+      </Alert>
+    );
 
   return (
     <Stack spacing={3}>
@@ -315,6 +327,7 @@ export const EditPlaylistPage = () => {
               const isSelected = selectedSongKeys.includes(key);
               return (
                 <SectionCard
+                  originIdentifier={song.identifier}
                   key={key}
                   kicker={song.artist}
                   title={song.title}

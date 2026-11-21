@@ -298,6 +298,7 @@ export const SongDetailPage = () => {
             ) : null}
             <Grid size={{ xs: 12, md: artworkUrl ? 8 : 12 }}>
               <SectionCard
+                originIdentifier={song.identifier}
                 kicker="TRACK META"
                 title={song.title}
                 body={formatSongCardMetadata({

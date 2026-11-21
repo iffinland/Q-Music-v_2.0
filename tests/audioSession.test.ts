@@ -43,6 +43,21 @@ const setup = (resolve = async () => 'http://node/audio') => {
 afterEach(() => vi.useRealTimers());
 
 describe('selected-song lifecycle', () => {
+  it('guards unloaded/invalid seeks, clamps targets and ignores seeking after disposal', async () => {
+    const { audio, session } = setup();
+    expect(session.seek(10)).toBe(false);
+    await session.start();
+    expect(session.seek(NaN)).toBe(false);
+    audio.duration = Infinity;
+    expect(session.seek(10)).toBe(false);
+    audio.duration = 123;
+    expect(session.seek(999)).toBe(true);
+    expect(audio.currentTime).toBe(123);
+    expect(session.seek(-10)).toBe(true);
+    expect(audio.currentTime).toBe(0);
+    session.dispose();
+    expect(session.seek(20)).toBe(false);
+  });
   it('does not claim Playing before the actual media event', async () => {
     const { audio, session, updates } = setup();
     session.setPlaying(true);
@@ -95,14 +110,15 @@ describe('selected-song lifecycle', () => {
     await Promise.resolve();
     expect(updates).toHaveLength(count);
   });
-  it('surfaces a codec/media error and stops playing', async () => {
+  it('reports a media load failure without claiming an unsupported format', async () => {
     const { audio, session, updates } = setup();
     session.setPlaying(true);
     await session.start();
     audio.error = { code: 4 };
     audio.dispatchEvent(new Event('error'));
     expect(updates.at(-1)).toMatchObject({ playing: false, buffering: false });
-    expect(updates.at(-1)?.error).toContain('not supported');
+    expect(updates.at(-1)?.error).toContain('current node');
+    expect(updates.at(-1)?.error).not.toMatch(/format|not supported/i);
     session.dispose();
   });
   it('provides buffering events and a finite stall timeout', async () => {

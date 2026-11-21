@@ -42,6 +42,7 @@ export const LibraryPage = () => {
           <Typography variant="h4">Recently Played</Typography>
           {recentSongs.map((song) => (
             <SectionCard
+              originIdentifier={song.identifier}
               key={`recent-${song.id}`}
               kicker={song.artist}
               title={song.title}
@@ -90,6 +91,7 @@ export const LibraryPage = () => {
           <Typography variant="h4">Saved Songs</Typography>
           {favoriteSongs.map((song) => (
             <SectionCard
+              originIdentifier={song.identifier}
               key={song.id}
               kicker={song.artist}
               title={song.title}
@@ -138,6 +140,7 @@ export const LibraryPage = () => {
           <Typography variant="h4">Saved Playlists</Typography>
           {favoritePlaylists.map((playlist) => (
             <SectionCard
+              originIdentifier={playlist.identifier}
               key={playlist.id}
               kicker={playlist.publisher}
               title={playlist.title}

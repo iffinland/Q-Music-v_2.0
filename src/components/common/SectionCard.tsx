@@ -1,7 +1,9 @@
+import { PublicationBadge } from './PublicationBadge';
 import { Box, Chip, Stack, Typography } from '@mui/material';
 import type { ReactNode } from 'react';
 
 interface SectionCardProps {
+  originIdentifier?: string;
   kicker?: ReactNode;
   title: ReactNode;
   body: ReactNode;
@@ -11,6 +13,7 @@ interface SectionCardProps {
 }
 
 export const SectionCard = ({
+  originIdentifier,
   kicker,
   title,
   body,
@@ -51,6 +54,7 @@ export const SectionCard = ({
             {kicker}
           </Typography>
         ) : null}
+        <PublicationBadge identifier={originIdentifier} />
         <Typography variant="h5" sx={{ lineHeight: 1.08 }}>
           {title}
         </Typography>

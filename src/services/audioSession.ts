@@ -1,9 +1,11 @@
+import { AUDIO_LOAD_ERROR } from './audioRecovery';
 import { isAbortError, requestError } from './qdnRequests';
 
 export interface AudioUpdate {
   label?: string;
   buffering?: boolean;
   error?: string | null;
+  mediaErrorCode?: number;
   url?: string | null;
   time?: number;
   duration?: number;
@@ -40,13 +42,27 @@ export class AudioSession {
         duration: Number.isFinite(audio.duration) ? audio.duration : 0,
       })
     );
+    this.listen('durationchange', () =>
+      this.update({
+        duration: Number.isFinite(audio.duration) ? audio.duration : 0,
+      })
+    );
     this.listen('canplay', () => {
       this.clearWatchdog();
       this.update({ buffering: false, label: 'Ready' });
     });
     this.listen('playing', () => {
+      if (!this.intent) {
+        this.audio.pause();
+        return;
+      }
       this.clearWatchdog();
-      this.update({ buffering: false, label: 'Playing', error: null });
+      this.update({
+        buffering: false,
+        label: 'Playing',
+        error: null,
+        playing: true,
+      });
     });
     this.listen('waiting', () => {
       if (this.intent) this.buffer('Buffering audio…');
@@ -58,12 +74,12 @@ export class AudioSession {
       const messages: Record<number, string> = {
         1: 'Audio loading was interrupted. Please retry.',
         2: 'The audio connection failed. Please retry.',
-        3: 'This audio file could not be decoded.',
-        4: 'This audio format is not supported, or the file is unavailable.',
+        3: AUDIO_LOAD_ERROR,
+        4: AUDIO_LOAD_ERROR,
       };
       this.fail(
-        messages[audio.error?.code ?? 0] ||
-          'Audio could not be loaded. Please retry.'
+        messages[audio.error?.code ?? 0] || AUDIO_LOAD_ERROR,
+        audio.error?.code
       );
     });
     this.listen('ended', () => {
@@ -110,6 +126,27 @@ export class AudioSession {
     this.audio.volume = Math.max(0, Math.min(1, volume));
   }
 
+  seek(seconds: number): boolean {
+    if (
+      this.disposed ||
+      !this.ready ||
+      !Number.isFinite(seconds) ||
+      !Number.isFinite(this.audio.duration) ||
+      this.audio.duration <= 0
+    )
+      return false;
+    try {
+      this.audio.currentTime = Math.max(
+        0,
+        Math.min(this.audio.duration, seconds)
+      );
+      this.update({ time: this.audio.currentTime });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   setPlaying(playing: boolean) {
     if (this.disposed) return;
     this.intent = playing;
@@ -138,17 +175,23 @@ export class AudioSession {
         if (this.disposed || !this.intent || attempt !== this.playAttempt)
           return;
         this.playPending = false;
-        const message =
+        const unsupportedSource =
           error &&
           typeof error === 'object' &&
           'name' in error &&
-          error.name === 'NotAllowedError'
+          error.name === 'NotSupportedError';
+        const message = unsupportedSource
+          ? AUDIO_LOAD_ERROR
+          : error &&
+              typeof error === 'object' &&
+              'name' in error &&
+              error.name === 'NotAllowedError'
             ? 'Press Play to allow audio in this browser.'
             : requestError(
                 error,
                 'Playback could not be started. Please retry.'
               );
-        this.fail(message);
+        this.fail(message, unsupportedSource ? 4 : undefined);
       });
   }
 
@@ -166,7 +209,7 @@ export class AudioSession {
     clearTimeout(this.watchdog);
     this.watchdog = undefined;
   }
-  private fail(error: string) {
+  private fail(error: string, mediaErrorCode?: number) {
     if (this.disposed) return;
     this.intent = false;
     this.playAttempt++;
@@ -175,6 +218,7 @@ export class AudioSession {
     this.clearWatchdog();
     this.update({
       error,
+      mediaErrorCode,
       playing: false,
       buffering: false,
       label: 'Audio unavailable',

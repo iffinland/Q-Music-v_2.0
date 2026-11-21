@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { AudioSession } from '../services/audioSession';
+import { AudioPlaybackSession } from '../services/audioPlaybackSession';
+import { prepareAudioRecovery } from '../services/audioRecovery';
 import { resolveSongStreamUrl } from '../services/songs';
 import type { MiniPlayerTrack } from '../state/player';
 
@@ -19,7 +20,7 @@ interface PlaybackOptions {
 export const useAudioPlayback = (options: PlaybackOptions) => {
   const latest = useRef(options);
   latest.current = options;
-  const session = useRef<AudioSession | null>(null);
+  const session = useRef<AudioPlaybackSession | null>(null);
   const [status, setStatus] = useState('');
   const [buffering, setBuffering] = useState(false);
   const publisher = options.track?.publisher;
@@ -29,9 +30,10 @@ export const useAudioPlayback = (options: PlaybackOptions) => {
 
   useEffect(() => {
     if (!publisher || !identifier) return;
-    const audio = new AudioSession(
-      new Audio(),
+    const audio = new AudioPlaybackSession(
+      () => new Audio(),
       (signal) => resolveSongStreamUrl(publisher, identifier, { signal }),
+      (options) => prepareAudioRecovery(publisher, identifier, options),
       (update) => {
         const current = latest.current;
         if (update.label !== undefined) setStatus(update.label);
@@ -64,6 +66,7 @@ export const useAudioPlayback = (options: PlaybackOptions) => {
   return {
     status,
     buffering,
+    seek: (seconds: number) => session.current?.seek(seconds) ?? false,
     setPlaying: (value: boolean) => {
       // Invoke play inside the click handler when an already loaded song needs
       // browser user activation; React's effect remains a state synchronizer.
