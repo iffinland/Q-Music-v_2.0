@@ -13,8 +13,8 @@ and own-node publisher-follow review/management (RC8). Final RC8 runtime was
 accepted on 2026-11-22 with explicit authorization to update documentation,
 commit/push main and publish the official 2.0.4 release.
 
-Stable finalization changes version metadata and documentation only relative
-to the accepted RC8 application. It adds no new feature behavior requiring
+Stable finalization changes version metadata, documentation and test/release
+configuration only relative to the accepted RC8 application. It adds no new feature behavior requiring
 another runtime cycle.
 
 ## Final checks
@@ -37,6 +37,16 @@ and native node-follow selection/read-back/permission/error management.
 Tests simulate DOM, audio and native bridge/network APIs. The user supplied
 physical Android/Hub runtime acceptance. Test counts do not prove availability
 of every network resource, every browser codec or every node configuration.
+
+## CI timing adjustment
+
+The first stable CI run passed all checks, while the parallel Release run hit
+Vitest's five-second whole-test deadline in two DOM interaction tests. Assertions
+and application code were unchanged. The suite now allows 15 seconds per test
+for lazy view imports plus complete DOM interactions on shared runners. Existing
+request/deadline tests keep their explicit simulated timers and assertions.
+The release workflow watches this configuration so the final release is built
+from the commit containing the CI adjustment, rather than retrying old source.
 
 ## Remaining limits and implementation scope
 
