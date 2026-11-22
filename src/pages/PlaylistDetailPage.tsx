@@ -1,3 +1,4 @@
+import { CreatorLink } from '../components/common/CreatorLink';
 import { PublicationBadge } from '../components/common/PublicationBadge';
 import { matchingMediaPrefix, isEarBumpIdentifier } from '../utils/mediaOrigin';
 import { useState as useCommentState } from 'react';
@@ -297,6 +298,9 @@ export const PlaylistDetailPage = () => {
         <Typography variant="body2">Loading playlist details...</Typography>
       ) : playlist ? (
         <Stack spacing={1.75}>
+          <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap">
+            <CreatorLink kind="publisher" name={playlist.publisher} />
+          </Stack>
           <Grid container spacing={2.25}>
             {artworkUrl ? (
               <Grid size={{ xs: 12, md: 4 }}>
@@ -437,7 +441,7 @@ export const PlaylistDetailPage = () => {
             </Typography>
             {orderedSongs.map((song, index) => (
               <Stack
-                key={`${song.publisher}:${song.identifier}`}
+                key={`${song.publisher}:${song.identifier}:${index}`}
                 direction={{ xs: 'column', sm: 'row' }}
                 spacing={1}
                 justifyContent="space-between"
@@ -457,7 +461,12 @@ export const PlaylistDetailPage = () => {
                     {index + 1}. {resolvePlaylistSongTitle(song)}
                   </Typography>
                   <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                    {song.artist || song.publisher}
+                    <CreatorLink
+                      kind="artist"
+                      name={song.artist || song.publisher}
+                    />
+                    {' • '}
+                    <CreatorLink kind="publisher" name={song.publisher} />
                   </Typography>
                 </Stack>
                 <Stack direction="row" spacing={0.5} alignItems="center">

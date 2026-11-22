@@ -61,7 +61,11 @@ beforeEach(() => {
             (!p.name || r.name?.toLowerCase() === p.name.toLowerCase()) &&
             (!p.before || (r.created || 0) < p.before)
         )
-        .sort((a, b) => (b.created || 0) - (a.created || 0))
+        .sort(
+          (a, b) =>
+            (p.reverse === false ? 1 : -1) *
+            ((a.created || 0) - (b.created || 0))
+        )
         .slice(p.offset || 0, (p.offset || 0) + p.limit);
     if (p.action === 'GET_QDN_RESOURCE_STATUS') return { status: 'READY' };
     if (p.action === 'GET_QDN_RESOURCE_URL')
@@ -395,5 +399,43 @@ describe('Ear-Bump resource compatibility', () => {
         offset: 10,
       })
     ).rejects.toThrow('source cursor');
+  });
+});
+
+describe('searchable index tags', () => {
+  it('retains valid tags in song/playlist summaries without requesting payloads', async () => {
+    const audio = row(SONG_PREFIXES[0], 'tagged', 10);
+    const list = row(PLAYLIST_PREFIXES[0], 'tagged', 9);
+    resources = [
+      {
+        ...audio,
+        metadata: { ...audio.metadata, tags: [' acoustic ', 4, '', null] },
+      },
+      { ...list, metadata: { ...list.metadata, tags: ['collection'] } },
+    ];
+    const songs = await fetchSongsPage();
+    const playlists = await fetchPlaylistsPage();
+    expect(songs.items[0].tags).toEqual(['acoustic']);
+    expect(playlists.items[0].tags).toEqual(['collection']);
+    expect(
+      native.mock.calls.every(
+        ([request]) => request.action === 'SEARCH_QDN_RESOURCES'
+      )
+    ).toBe(true);
+  });
+});
+
+describe('oldest music index probe', () => {
+  it('merges both sources oldest-first without changing the default latest-first order', async () => {
+    resources = [
+      row(SONG_PREFIXES[0], 'new', 30),
+      row(SONG_PREFIXES[1], 'ear-old', 10),
+      row(SONG_PREFIXES[0], 'q-old', 20),
+    ];
+    const latest = await fetchSongsPage({ limit: 1 });
+    expect(latest.items[0].created).toBe(30);
+    const oldest = await fetchSongsPage({ limit: 1, reverse: false });
+    expect(oldest.items[0].created).toBe(10);
+    expect(native.mock.calls.some(([p]) => p.reverse === false)).toBe(true);
   });
 });

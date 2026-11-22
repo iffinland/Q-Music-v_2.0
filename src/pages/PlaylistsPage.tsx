@@ -1,40 +1,45 @@
+import { Link } from 'react-router-dom';
+import { buildPlaylistSearchText } from '../utils/musicSearch';
+import { MediaCard } from '../components/common/MediaCard';
+import {
+  CardSkeletons,
+  MediaGrid,
+  MediaPagination,
+} from '../components/common/MediaCollection';
+import { usePlaylistPlayback } from '../hooks/usePlaylistPlayback';
 import {
   Alert,
   Button,
-  Grid,
+  Box,
   MenuItem,
-  Skeleton,
   Stack,
   TextField,
   Typography,
-  useMediaQuery,
 } from '@mui/material';
 import { useDeferredValue, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import { useTheme } from '@mui/material/styles';
-import { ArtworkThumb } from '../components/common/ArtworkThumb';
-import { PageHero } from '../components/common/PageHero';
-import { SectionCard } from '../components/common/SectionCard';
 import { usePlaylistsFeed } from '../hooks/usePlaylistsFeed';
 import { fetchAllPlaylists } from '../services/playlists';
 import { useMediaCatalog } from '../hooks/useMediaCatalog';
 import { usePlaylistCounts } from '../hooks/usePlaylistCounts';
 import { mergeMedia } from '../utils/mediaIdentity';
 import { emitMediaRefresh } from '../utils/mediaEvents';
-import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
 
 export const PlaylistsPage = () => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const pageSize = isMobile ? 12 : 24;
+  const pageSize = 20;
   const [limit, setLimit] = useState(pageSize);
+  const [selection, setSelection] = useState({ key: '', page: 1 });
+  const [titleLetter, setTitleLetter] = useState('ALL');
+  const playlistPlayer = usePlaylistPlayback();
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'latest' | 'title' | 'tracks'>('latest');
   const { playlists, isLoading, error, hasMore, retry } =
     usePlaylistsFeed(limit);
   const deferredQuery = useDeferredValue(query);
 
-  const expanded = Boolean(deferredQuery.trim()) || sortBy !== 'latest';
+  const expanded =
+    Boolean(deferredQuery.trim()) ||
+    sortBy !== 'latest' ||
+    titleLetter !== 'ALL';
   const catalog = useMediaCatalog(fetchAllPlaylists, expanded);
   const allPlaylists = useMemo(
     () => mergeMedia(playlists, catalog.items),
@@ -52,9 +57,13 @@ export const PlaylistsPage = () => {
         songCount: counts[item.id] ?? item.songCount,
       }))
       .filter((playlist) => {
+        if (
+          titleLetter !== 'ALL' &&
+          !playlist.title.trim().toUpperCase().startsWith(titleLetter)
+        )
+          return false;
         if (!normalizedQuery) return true;
-        return [playlist.title, playlist.publisher, playlist.description || '']
-          .join(' ')
+        return buildPlaylistSearchText(playlist)
           .toLowerCase()
           .includes(normalizedQuery);
       });
@@ -67,15 +76,50 @@ export const PlaylistsPage = () => {
         return (right.songCount ?? -1) - (left.songCount ?? -1);
       }
       return (
-        (right.updated || right.created || 0) -
-        (left.updated || left.created || 0)
+        (right.created || right.updated || 0) -
+        (left.created || left.updated || 0)
       );
     });
-  }, [deferredQuery, playlists, sortBy, expanded, allPlaylists, counts]);
+  }, [
+    deferredQuery,
+    playlists,
+    sortBy,
+    expanded,
+    allPlaylists,
+    counts,
+    titleLetter,
+  ]);
+
+  const queryKey = JSON.stringify([deferredQuery, sortBy, titleLetter]);
+  const pageCount = Math.max(1, Math.ceil(visiblePlaylists.length / pageSize));
+  const morePages = expanded ? catalog.isLoading : hasMore && !error;
+  const requestedPage = selection.key === queryKey ? selection.page : 1;
+  const page =
+    !morePages && !isLoading && !catalog.isLoading
+      ? Math.min(requestedPage, pageCount)
+      : requestedPage;
+  const pagePlaylists = visiblePlaylists.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
+  const changePage = (next: number) => {
+    setSelection({ key: queryKey, page: next });
+    if (!expanded) setLimit((current) => Math.max(current, next * pageSize));
+    document
+      .getElementById('playlist-results')
+      ?.scrollIntoView?.({ block: 'start' });
+  };
 
   return (
     <Stack spacing={3}>
-      <PageHero eyebrow="" title="Explore playlists" description="" />
+      <Stack spacing={0.5}>
+        <Typography component="h1" variant="h2" sx={{ fontWeight: 800 }}>
+          Explore playlists
+        </Typography>
+        <Typography color="text.secondary">
+          Playlists from Q-Music and Ear-Bump.
+        </Typography>
+      </Stack>
       {error ? (
         <Alert
           severity="warning"
@@ -142,86 +186,69 @@ export const PlaylistsPage = () => {
           <MenuItem value="tracks">Track count</MenuItem>
         </TextField>
       </Stack>
-      <Grid container spacing={2.5}>
-        {isLoading && playlists.length === 0
-          ? Array.from({ length: 6 }).map((_, index) => (
-              <Grid key={index} size={{ xs: 12, md: 4 }}>
-                <Skeleton variant="rounded" height={220} />
-              </Grid>
-            ))
-          : visiblePlaylists.map((playlist) => (
-              <Grid key={playlist.id} size={{ xs: 12, md: 4 }}>
-                <SectionCard
-                  originIdentifier={playlist.identifier}
-                  kicker={playlist.publisher}
-                  title={playlist.title}
-                  media={
-                    <ArtworkThumb
-                      kind="playlist"
-                      publisher={playlist.publisher}
-                      identifier={playlist.identifier}
-                      title={playlist.title}
-                    />
-                  }
-                  body={formatPlaylistCardMetadata({
-                    title: playlist.title,
-                    publisher: playlist.publisher,
-                    description: playlist.description,
-                    publishedDate: playlist.publishedDate,
-                    songCount: playlist.songCount,
-                  })}
-                  meta={[
-                    'PLAYLIST',
-                    ...(typeof playlist.songCount === 'number'
-                      ? [`${playlist.songCount} tracks`]
-                      : []),
-                  ]}
-                  action={
-                    <Button
-                      component={RouterLink}
-                      to={`/playlists/${encodeURIComponent(playlist.publisher)}/${encodeURIComponent(playlist.identifier)}`}
-                      variant="outlined"
-                      fullWidth
-                    >
-                      Open playlist
-                    </Button>
-                  }
-                />
-              </Grid>
-            ))}
-      </Grid>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={1}
-        justifyContent="space-between"
-        alignItems={{ xs: 'stretch', sm: 'center' }}
+      <Button
+        component={Link}
+        to={`/search${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`}
+        variant="outlined"
       >
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Showing {visiblePlaylists.length} loaded playlists.
+        Search songs, artists and publishers
+      </Button>
+      <Stack spacing={1}>
+        <Typography variant="body2" color="text.secondary">
+          Jump by playlist title
         </Typography>
-        <Button
-          variant="contained"
-          disabled={
-            isLoading ||
-            (expanded ? catalog.complete || catalog.isLoading : !hasMore)
-          }
-          onClick={() =>
-            expanded
-              ? catalog.retry()
-              : setLimit((current) => current + pageSize)
-          }
-        >
-          {isLoading
-            ? 'Loading…'
-            : expanded
-              ? catalog.complete
-                ? 'All search results loaded'
-                : 'Continue search'
-              : hasMore
-                ? 'Load more'
-                : 'All playlists loaded'}
-        </Button>
+        <Stack direction="row" flexWrap="wrap" useFlexGap spacing={0.75}>
+          {['ALL', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')].map((letter) => (
+            <Button
+              key={letter}
+              size="small"
+              variant={titleLetter === letter ? 'contained' : 'outlined'}
+              onClick={() => setTitleLetter(letter)}
+              sx={{ minWidth: 36 }}
+            >
+              {letter === 'ALL' ? 'All' : letter}
+            </Button>
+          ))}
+        </Stack>
       </Stack>
+      {playlistPlayer.error ? (
+        <Alert severity="warning">{playlistPlayer.error}</Alert>
+      ) : null}
+      <Box id="playlist-results" sx={{ scrollMarginTop: 90 }}>
+        <MediaGrid kind="playlist">
+          {isLoading && !pagePlaylists.length ? (
+            <CardSkeletons />
+          ) : (
+            pagePlaylists.map((playlist) => (
+              <MediaCard
+                key={playlist.id}
+                kind="playlist"
+                item={playlist}
+                busy={playlistPlayer.loadingId === playlist.id}
+                onPlay={() => void playlistPlayer.play(playlist)}
+              />
+            ))
+          )}
+        </MediaGrid>
+      </Box>
+      {!isLoading && !catalog.isLoading && !pagePlaylists.length ? (
+        <Typography color="text.secondary">
+          No matching playlists on this page.
+        </Typography>
+      ) : null}
+      {expanded && !catalog.complete ? (
+        <Typography variant="caption" color="text.secondary">
+          Results and alphabetical order include the catalog loaded so far; more
+          results may appear.
+        </Typography>
+      ) : null}
+      <MediaPagination
+        page={page}
+        pages={pageCount}
+        more={morePages}
+        busy={isLoading || catalog.isLoading}
+        onChange={changePage}
+      />
     </Stack>
   );
 };

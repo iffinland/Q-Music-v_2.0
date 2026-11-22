@@ -11,6 +11,8 @@ interface ArtworkThumbProps {
   title: string;
   size?: number;
   radius?: number;
+  fluid?: boolean;
+  interactive?: boolean;
 }
 
 export const ArtworkThumb = ({
@@ -20,6 +22,8 @@ export const ArtworkThumb = ({
   title,
   size = 72,
   radius = 2,
+  fluid = false,
+  interactive = true,
 }: ArtworkThumbProps) => {
   const embeddedPlaylistCover =
     kind === 'playlist' && isEarBumpIdentifier(identifier);
@@ -65,40 +69,46 @@ export const ArtworkThumb = ({
     };
   }, []);
 
+  const width = fluid ? '100%' : size;
+  const height = fluid ? '100%' : size;
+
   if (!isVisible || isLoading) {
     return (
-      <Box ref={hostRef}>
-        <Skeleton variant="rounded" width={size} height={size} />
+      <Box ref={hostRef} sx={{ width, height }}>
+        <Skeleton variant="rounded" width={width} height={height} />
       </Box>
     );
   }
 
   if (artworkUrl) {
-    return (
+    const image = (open?: () => void) => (
+      <Box
+        ref={hostRef}
+        component="img"
+        src={artworkUrl}
+        alt={title}
+        loading="lazy"
+        decoding="async"
+        onLoad={onLoad}
+        onError={onError}
+        onClick={open}
+        sx={{
+          width,
+          height,
+          objectFit: 'cover',
+          borderRadius: radius,
+          display: 'block',
+          flexShrink: 0,
+          cursor: open ? 'zoom-in' : 'inherit',
+        }}
+      />
+    );
+    return interactive ? (
       <ImageLightbox src={artworkUrl} alt={title}>
-        {({ open }) => (
-          <Box
-            ref={hostRef}
-            component="img"
-            src={artworkUrl}
-            alt={title}
-            loading="lazy"
-            onLoad={onLoad}
-            onError={onError}
-            onClick={open}
-            sx={{
-              width: size,
-              height: size,
-              objectFit: 'cover',
-              borderRadius: radius,
-              border: '1px solid',
-              borderColor: 'divider',
-              flexShrink: 0,
-              cursor: 'zoom-in',
-            }}
-          />
-        )}
+        {({ open }) => image(open)}
       </ImageLightbox>
+    ) : (
+      image()
     );
   }
 
@@ -106,8 +116,8 @@ export const ArtworkThumb = ({
     <Box
       ref={hostRef}
       sx={{
-        width: size,
-        height: size,
+        width,
+        height,
         borderRadius: radius,
         border: '1px solid',
         borderColor: 'divider',

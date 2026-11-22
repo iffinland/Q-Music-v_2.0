@@ -67,6 +67,26 @@ const PublishPage = lazy(() =>
     default: module.PublishPage,
   }))
 );
+const DiscoverPage = lazy(() =>
+  import('../pages/DiscoverPage').then((module) => ({
+    default: module.DiscoverPage,
+  }))
+);
+const SearchPage = lazy(() =>
+  import('../pages/SearchPage').then((module) => ({
+    default: module.SearchPage,
+  }))
+);
+const PublisherPage = lazy(() =>
+  import('../pages/PublisherPage').then((module) => ({
+    default: module.PublisherPage,
+  }))
+);
+const ArtistPage = lazy(() =>
+  import('../pages/ArtistPage').then((module) => ({
+    default: module.ArtistPage,
+  }))
+);
 const NotFoundPage = lazy(() =>
   import('../pages/NotFoundPage').then((module) => ({
     default: module.NotFoundPage,
@@ -88,6 +108,8 @@ const router = createBrowserRouter(
           index: true,
           element: withSuspense(<AppHome />),
         },
+        { path: 'discover', element: withSuspense(<DiscoverPage />) },
+        { path: 'search', element: withSuspense(<SearchPage />) },
         {
           path: 'songs',
           element: withSuspense(<SongsPage />),
@@ -113,6 +135,11 @@ const router = createBrowserRouter(
             },
           ],
         },
+        {
+          path: 'publishers/:publisher',
+          element: withSuspense(<PublisherPage />),
+        },
+        { path: 'artists/:artist', element: withSuspense(<ArtistPage />) },
         {
           path: 'library',
           element: withSuspense(<LibraryPage />),

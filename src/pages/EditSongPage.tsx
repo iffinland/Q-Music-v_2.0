@@ -13,8 +13,9 @@ import { emitMediaRefresh } from '../utils/mediaEvents';
 import { parseSongMetadata } from '../utils/songMetadata';
 import {
   AUDIO_INPUT_ACCEPT,
+  AUDIO_FORMATS_HELP,
   AUDIO_LIMIT_TEXT,
-  COVER_LIMIT_TEXT,
+  COVER_FORMATS_HELP,
   COVER_PROCESSING_TEXT,
   IMAGE_INPUT_ACCEPT,
 } from '../utils/publishLimits';
@@ -206,7 +207,7 @@ export const EditSongPage = () => {
             meta={['AUDIO', song.identifier]}
           />
           <Alert severity="info">
-            {AUDIO_LIMIT_TEXT} {COVER_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
+            {AUDIO_LIMIT_TEXT} {COVER_PROCESSING_TEXT}
           </Alert>
           <TextField
             label="Title"
@@ -273,7 +274,7 @@ export const EditSongPage = () => {
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             Automatic reuse downloads up to 64 MiB. For larger files, choose the
             original file on your device. Replacement audio is optional.{' '}
-            {AUDIO_LIMIT_TEXT}
+            {AUDIO_FORMATS_HELP} {AUDIO_LIMIT_TEXT}
           </Typography>
           <Button variant="outlined" component="label">
             {coverFile
@@ -289,7 +290,7 @@ export const EditSongPage = () => {
             />
           </Button>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-            Replacement cover is optional. {COVER_LIMIT_TEXT}{' '}
+            Replacement cover is optional. {COVER_FORMATS_HELP}{' '}
             {COVER_PROCESSING_TEXT}
           </Typography>
           <Button

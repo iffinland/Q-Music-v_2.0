@@ -1,22 +1,21 @@
-import { PlayArrowRounded } from '@mui/icons-material';
+import { buildSongSearchText } from '../utils/musicSearch';
+import { Link } from 'react-router-dom';
+import { MediaCard } from '../components/common/MediaCard';
+import {
+  CardSkeletons,
+  MediaGrid,
+  MediaPagination,
+} from '../components/common/MediaCollection';
 import {
   Alert,
   Box,
   Button,
-  Grid,
   MenuItem,
-  Skeleton,
   Stack,
   TextField,
   Typography,
-  useMediaQuery,
 } from '@mui/material';
-import { Fragment, useDeferredValue, useMemo, useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import { useTheme } from '@mui/material/styles';
-import { ArtworkThumb } from '../components/common/ArtworkThumb';
-import { PageHero } from '../components/common/PageHero';
-import { SectionCard } from '../components/common/SectionCard';
+import { useDeferredValue, useMemo, useState } from 'react';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
 import { useSongsFeed } from '../hooks/useSongsFeed';
@@ -26,25 +25,6 @@ import { mergeMedia } from '../utils/mediaIdentity';
 import { emitMediaRefresh } from '../utils/mediaEvents';
 import { songQueue } from '../utils/songQueue';
 import type { SongSummary } from '../types/media';
-import { formatSongCardMetadata } from '../utils/songMetadata';
-
-const buildSongSearchText = (song: SongSummary) =>
-  [
-    song.title,
-    song.artist,
-    song.publisher,
-    song.identifier,
-    song.album,
-    song.genre,
-    song.mood,
-    song.language,
-    song.notes,
-    song.publishedDate,
-    song.description,
-  ]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .join(' ')
-    .toLowerCase();
 
 type SongStringField =
   | 'publisher'
@@ -68,65 +48,10 @@ const getUniqueValues = (songs: SongSummary[], key: SongStringField) =>
     )
   ).sort((left, right) => left.localeCompare(right));
 
-const escapeRegExp = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const highlightText = (value: string, terms: string[]) => {
-  if (!value || !terms.length) {
-    return value;
-  }
-
-  const uniqueTerms = Array.from(new Set(terms.filter(Boolean)));
-  if (!uniqueTerms.length) {
-    return value;
-  }
-
-  const pattern = new RegExp(
-    `(${uniqueTerms.map((term) => escapeRegExp(term)).join('|')})`,
-    'gi'
-  );
-  const parts = value.split(pattern);
-
-  return parts.map((part, index) => {
-    const isMatch = uniqueTerms.some(
-      (term) => part.toLowerCase() === term.toLowerCase()
-    );
-
-    if (!isMatch) {
-      return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
-    }
-
-    return (
-      <Box
-        key={`${part}-${index}`}
-        component="mark"
-        sx={{
-          px: 0.3,
-          py: 0.05,
-          borderRadius: 0.5,
-          backgroundColor: 'rgba(255, 214, 10, 0.28)',
-          color: 'inherit',
-        }}
-      >
-        {part}
-      </Box>
-    );
-  });
-};
-
-const renderHighlightedLines = (value: string, terms: string[]) =>
-  value.split('\n').map((line, index) => (
-    <Fragment key={`${line}-${index}`}>
-      {index > 0 ? <br /> : null}
-      {highlightText(line, terms)}
-    </Fragment>
-  ));
-
 export const SongsPage = () => {
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const pageSize = isMobile ? 12 : 24;
+  const pageSize = 20;
   const [limit, setLimit] = useState(pageSize);
+  const [selection, setSelection] = useState({ key: '', page: 1 });
   const [query, setQuery] = useState('');
   const [sortBy, setSortBy] = useState<'latest' | 'title' | 'artist'>('latest');
   const [artistLetter, setArtistLetter] = useState<string>('ALL');
@@ -202,7 +127,7 @@ export const SongsPage = () => {
       }
 
       if (!queryTerms.length) return true;
-      const searchText = buildSongSearchText(song);
+      const searchText = buildSongSearchText(song).toLowerCase();
       return queryTerms.every((term) => searchText.includes(term));
     });
 
@@ -214,8 +139,8 @@ export const SongsPage = () => {
         return left.artist.localeCompare(right.artist);
       }
       return (
-        (right.updated || right.created || 0) -
-        (left.updated || left.created || 0)
+        (right.created || right.updated || 0) -
+        (left.created || left.updated || 0)
       );
     });
   }, [
@@ -229,26 +154,49 @@ export const SongsPage = () => {
     songs,
     sortBy,
   ]);
-  const highlightedTerms = useMemo(
-    () => deferredQuery.trim().toLowerCase().split(/\s+/).filter(Boolean),
-    [deferredQuery]
-  );
-
+  const queryKey = JSON.stringify([
+    deferredQuery,
+    sortBy,
+    artistLetter,
+    selectedGenre,
+    selectedLanguage,
+    selectedPublisher,
+  ]);
+  const pageCount = Math.max(1, Math.ceil(visibleSongs.length / pageSize));
+  const morePages = isExtendedSearchActive
+    ? catalog.isLoading
+    : hasMore && !error;
+  const requestedPage = selection.key === queryKey ? selection.page : 1;
+  const page =
+    !morePages && !isLoading && !catalog.isLoading
+      ? Math.min(requestedPage, pageCount)
+      : requestedPage;
+  const pageSongs = visibleSongs.slice((page - 1) * pageSize, page * pageSize);
+  const changePage = (next: number) => {
+    setSelection({ key: queryKey, page: next });
+    if (!isExtendedSearchActive)
+      setLimit((current) => Math.max(current, next * pageSize));
+    document
+      .getElementById('song-results')
+      ?.scrollIntoView?.({ block: 'start' });
+  };
   const handlePreview = (trackId: string) => {
-    const queue = songQueue(visibleSongs);
-    const index = visibleSongs.findIndex((track) => track.id === trackId);
+    const index = pageSongs.findIndex((track) => track.id === trackId);
     if (index < 0) return;
-    addRecentSong(visibleSongs[index]);
-    playQueue(queue, index);
+    addRecentSong(pageSongs[index]);
+    playQueue(songQueue(pageSongs), index);
   };
 
   return (
     <Stack spacing={3}>
-      <PageHero
-        eyebrow=""
-        title="Discover music"
-        description="Browse songs, find your favorites and listen."
-      />
+      <Stack spacing={0.5}>
+        <Typography component="h1" variant="h2" sx={{ fontWeight: 800 }}>
+          Discover music
+        </Typography>
+        <Typography color="text.secondary">
+          Browse songs, find your favorites and listen.
+        </Typography>
+      </Stack>
       {error ? (
         <Alert
           severity="warning"
@@ -277,8 +225,10 @@ export const SongsPage = () => {
         </Alert>
       ) : null}
       <Stack
-        direction={{ xs: 'column', md: 'row' }}
-        spacing={2}
+        direction="row"
+        flexWrap="wrap"
+        useFlexGap
+        spacing={1.5}
         sx={{
           border: '1px solid',
           borderColor: 'divider',
@@ -291,7 +241,7 @@ export const SongsPage = () => {
           label="Search songs"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          fullWidth
+          sx={{ flex: '1 1 240px' }}
           helperText="Search by title, artist, username, genre, album, mood, language, notes and other song details"
           size="small"
         />
@@ -302,7 +252,7 @@ export const SongsPage = () => {
           onChange={(event) =>
             setSortBy(event.target.value as 'latest' | 'title' | 'artist')
           }
-          sx={{ minWidth: { md: 200 } }}
+          sx={{ flex: '1 1 140px' }}
           size="small"
         >
           <MenuItem value="latest">Latest</MenuItem>
@@ -315,7 +265,7 @@ export const SongsPage = () => {
           slotProps={{ select: { onOpen: () => setCatalogRequested(true) } }}
           value={selectedGenre}
           onChange={(event) => setSelectedGenre(event.target.value)}
-          sx={{ minWidth: { md: 180 } }}
+          sx={{ flex: '1 1 140px' }}
           size="small"
         >
           <MenuItem value="ALL">All genres</MenuItem>
@@ -331,7 +281,7 @@ export const SongsPage = () => {
           slotProps={{ select: { onOpen: () => setCatalogRequested(true) } }}
           value={selectedLanguage}
           onChange={(event) => setSelectedLanguage(event.target.value)}
-          sx={{ minWidth: { md: 180 } }}
+          sx={{ flex: '1 1 140px' }}
           size="small"
         >
           <MenuItem value="ALL">All languages</MenuItem>
@@ -347,7 +297,7 @@ export const SongsPage = () => {
           slotProps={{ select: { onOpen: () => setCatalogRequested(true) } }}
           value={selectedPublisher}
           onChange={(event) => setSelectedPublisher(event.target.value)}
-          sx={{ minWidth: { md: 180 } }}
+          sx={{ flex: '1 1 140px' }}
           size="small"
         >
           <MenuItem value="ALL">All publishers</MenuItem>
@@ -358,6 +308,13 @@ export const SongsPage = () => {
           ))}
         </TextField>
       </Stack>
+      <Button
+        component={Link}
+        to={`/search${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ''}`}
+        variant="outlined"
+      >
+        Search playlists, artists and publishers
+      </Button>
       <Stack spacing={1}>
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
           Jump by artist initial
@@ -383,115 +340,39 @@ export const SongsPage = () => {
           ))}
         </Stack>
       </Stack>
-      <Grid container spacing={2.5}>
-        {isLoading && songs.length === 0
-          ? Array.from({ length: 6 }).map((_, index) => (
-              <Grid key={index} size={{ xs: 12, md: 6 }}>
-                <Skeleton variant="rounded" height={220} />
-              </Grid>
+      <Box id="song-results" sx={{ scrollMarginTop: 90 }}>
+        <MediaGrid>
+          {isLoading && !pageSongs.length ? (
+            <CardSkeletons />
+          ) : (
+            pageSongs.map((track) => (
+              <MediaCard
+                key={track.id}
+                kind="song"
+                item={track}
+                onPlay={() => handlePreview(track.id)}
+              />
             ))
-          : visibleSongs.map((track: SongSummary) => (
-              <Grid key={track.id} size={{ xs: 12, md: 6 }}>
-                <SectionCard
-                  originIdentifier={track.identifier}
-                  kicker={highlightText(track.artist, highlightedTerms)}
-                  title={highlightText(track.title, highlightedTerms)}
-                  media={
-                    <ArtworkThumb
-                      kind="song"
-                      publisher={track.publisher}
-                      identifier={track.identifier}
-                      title={track.title}
-                    />
-                  }
-                  body={renderHighlightedLines(
-                    formatSongCardMetadata({
-                      title: track.title,
-                      publisher: track.publisher,
-                      description: track.description,
-                      notesMaxLength: 80,
-                    }),
-                    highlightedTerms
-                  )}
-                  meta={[
-                    'AUDIO',
-                    track.publisher,
-                    ...(selectedGenre !== 'ALL' && track.genre
-                      ? [`Genre: ${track.genre}`]
-                      : []),
-                    ...(selectedLanguage !== 'ALL' && track.language
-                      ? [`Language: ${track.language}`]
-                      : []),
-                    ...(selectedPublisher !== 'ALL'
-                      ? [`Publisher: ${track.publisher}`]
-                      : []),
-                  ]}
-                  action={
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                      <Button
-                        startIcon={<PlayArrowRounded />}
-                        variant="contained"
-                        fullWidth
-                        onClick={() => handlePreview(track.id)}
-                      >
-                        Play
-                      </Button>
-                      <Button
-                        component={RouterLink}
-                        to={`/songs/${encodeURIComponent(track.publisher)}/${encodeURIComponent(track.identifier)}`}
-                        variant="outlined"
-                        fullWidth
-                      >
-                        Details
-                      </Button>
-                    </Stack>
-                  }
-                />
-              </Grid>
-            ))}
-      </Grid>
-      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+          )}
+        </MediaGrid>
+      </Box>
+      {!isLoading && !catalog.isLoading && !pageSongs.length ? (
+        <Typography color="text.secondary">
+          No matching songs on this page.
+        </Typography>
+      ) : null}
+      <Typography variant="caption" color="text.secondary">
         {isExtendedSearchActive && !catalog.complete
-          ? 'Search includes the songs loaded so far; more results may appear.'
+          ? 'Results and alphabetical order include the catalog loaded so far; more results may appear.'
           : 'Music published on QDN.'}
       </Typography>
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        spacing={1}
-        justifyContent="space-between"
-        alignItems={{ xs: 'stretch', sm: 'center' }}
-      >
-        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-          Showing {visibleSongs.length} of {allAvailableSongs.length} songs
-          {artistLetter === 'ALL'
-            ? '.'
-            : ` for artists starting with "${artistLetter}".`}
-        </Typography>
-        <Button
-          variant="contained"
-          disabled={
-            isLoading ||
-            (isExtendedSearchActive
-              ? catalog.complete || catalog.isLoading
-              : !hasMore)
-          }
-          onClick={() =>
-            isExtendedSearchActive
-              ? catalog.retry()
-              : setLimit((current) => current + pageSize)
-          }
-        >
-          {isLoading
-            ? 'Loading…'
-            : isExtendedSearchActive
-              ? catalog.complete
-                ? 'All search results loaded'
-                : 'Continue search'
-              : hasMore
-                ? 'Load more'
-                : 'All songs loaded'}
-        </Button>
-      </Stack>
+      <MediaPagination
+        page={page}
+        pages={pageCount}
+        more={morePages}
+        busy={isLoading || catalog.isLoading}
+        onChange={changePage}
+      />
     </Stack>
   );
 };

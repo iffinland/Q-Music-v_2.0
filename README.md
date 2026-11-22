@@ -3,33 +3,56 @@
 Qortal music browsing, playlists and audio playback, built with React, TypeScript
 and Vite.
 
-Public release: **2.0.3**.
+Public release: **2.0.4**.
 
-The user accepted the final RC4 Android/Hub runtime test on 2026-11-21 and
-approved publishing this release. It adds Ear-Bump listening/browsing, clear
-publication labels, bounded audio start recovery, seeking and compact volume
-controls. See [release notes](docs/release-2.0.3.md) and
-[verification evidence](docs/verification-2.0.3.md).
+This release brings Classic/Modern appearance choices, consistent music cards,
+creator collections, unified search, repeat/shuffle, Discover Mix, Help and
+reviewed publisher-follow mirroring on your own node. The user accepted every
+runtime phase, including final RC8 on 2026-11-22, and authorized this release.
 
-The 2.0.2 release: All five repair phases passed the user's Android/Hub
-runtime tests on 2026-11-20, including substantially improved loading speed.
+See [release notes and limits](docs/release-2.0.4.md),
+[verification evidence](docs/verification-2.0.4.md) and the
+[user guide](docs/user-guide.md). Earlier playback, publishing, Library and
+Ear-Bump compatibility improvements from 2.0.2/2.0.3 are retained.
 
 ## Downloads
 
 - [Latest release](https://github.com/iffinland/Q-Music-v_2.0/releases/latest)
-- [Q-Music 2.0.3 — deployable Q-App ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.3/Q-Music_2.0.3.zip)
-- [Source ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.3/Q-Music_2.0.3_source.zip)
-- [SHA-256 checksums](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.3/SHA256SUMS.txt)
+- [Q-Music 2.0.4 — deployable Q-App ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.4/Q-Music_2.0.4.zip)
+- [Source ZIP](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.4/Q-Music_2.0.4_source.zip)
+- [SHA-256 checksums](https://github.com/iffinland/Q-Music-v_2.0/releases/download/v2.0.4/SHA256SUMS.txt)
 
-Use `Q-Music_2.0.3.zip` for Q-App publishing/loading. It contains the production
+Use `Q-Music_2.0.4.zip` for Q-App publishing/loading. It contains the production
 files directly at its root, with `index.html`. The source ZIP and GitHub's
 automatic source archives are development sources, not deployable Q-Apps.
-After loading the app, verify **v2.0.3** at the bottom of the navigation sidebar.
+After loading the app, verify **v2.0.4** at the bottom of the navigation sidebar.
 The version is no longer shown below the logo.
 
 ## What changed
 
-New in 2.0.3:
+New in 2.0.4:
+
+- Choose Classic or Modern through **Appearance** in the sidebar; light/dark
+  mode is independent. Switching keeps playback and the current queue.
+- Modern Home has two simple scrollable rails of the latest 15 songs/playlists.
+  Browse, Library and My Music share consistent cards and responsive pagination;
+  song/playlist details open without losing the originating view.
+- Artist/publisher names link to collections, including in the mini-player.
+  Publisher feeds are scoped; artist lookup checks small batches of index data.
+- Search from Home or **Search** in the menu, with All, Songs, Playlists, Artists
+  and Publishers tabs. **Search more music** continues an incomplete search.
+- Player controls add Repeat one, Repeat queue and Shuffle of the current queue,
+  retaining actual shuffle history for Previous/Next.
+- **Discover Mix** samples recent and older indexed music: Find a mix previews
+  up to 20 songs; Play mix starts them. Finding another mix preserves playback.
+- **Mirror publisher** / **Mirror artist publishers** review selected Qortal
+  names before saving node follow rules. Management can remove only Q-Music's
+  rules. This requires your own node and includes all publisher content, future
+  publications and non-music files; node policy/capacity governs downloads.
+- **Help** explains listening, discovery, Library, formats, publishing and
+  mirroring. File/cover hints are shared with publishing/edit views.
+
+Retained from 2.0.3:
 
 - Browse and play Ear-Bump songs/playlists alongside Q-Music, with explicit
   **Published @ Ear-Bump** / **Published @ Q-Music** labels. Ear-Bump originals
@@ -57,9 +80,9 @@ Retained from 2.0.2:
 - Account/balance requests, page recovery, Hub messages, download memory and stale
   async work have additional guards.
 
-See [release notes and remaining limits](docs/release-2.0.3.md),
+See [release notes and remaining limits](docs/release-2.0.4.md),
 [change history](CHANGELOG.md), [audit resolution](docs/audit-resolution.md), and
-[verification evidence](docs/verification-2.0.3.md).
+[verification evidence](docs/verification-2.0.4.md).
 
 ## File sizes and compatibility
 

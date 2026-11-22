@@ -1,3 +1,4 @@
+import { indexTags } from '../utils/musicSearch';
 import { SONG_PREFIXES, matchingMediaPrefix } from '../utils/mediaOrigin';
 import {
   MAX_AUTOMATIC_AUDIO_REUSE_BYTES,
@@ -116,6 +117,9 @@ const mapSongResource = (resource: QdnSearchResource): SongSummary | null => {
     status: resource.status,
     service: 'AUDIO',
     mediaType: 'SONG',
+    ...(indexTags(resource.metadata?.tags)?.length
+      ? { tags: indexTags(resource.metadata?.tags) }
+      : {}),
     metadataRevision: metadataRevision(
       typeof resource.metadata?.description === 'string'
         ? resource.metadata.description

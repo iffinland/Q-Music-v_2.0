@@ -1,3 +1,4 @@
+import { indexTags } from '../utils/musicSearch';
 import {
   PLAYLIST_PREFIXES,
   matchingMediaPrefix,
@@ -80,6 +81,9 @@ const mapPlaylistSummary = (
     updated: resource.updated,
     status: resource.status,
     songCount: null,
+    ...(indexTags(resource.metadata?.tags)?.length
+      ? { tags: indexTags(resource.metadata?.tags) }
+      : {}),
   };
 };
 

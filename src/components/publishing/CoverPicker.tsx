@@ -1,3 +1,4 @@
+import { COVER_FORMATS_HELP } from '../../utils/publishLimits';
 import { useEffect, useState } from 'react';
 import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 import { processCoverImage } from '../../services/publishing/covers';
@@ -56,6 +57,9 @@ export const CoverPicker = ({
   return (
     <Stack spacing={1}>
       <Typography variant="subtitle2">{label}</Typography>
+      <Typography variant="caption" color="text.secondary">
+        {COVER_FORMATS_HELP}
+      </Typography>
       {preview && (
         <Box
           component="img"

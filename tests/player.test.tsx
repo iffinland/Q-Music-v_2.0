@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router-dom';
 import React from 'react';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -59,7 +60,9 @@ const setup = () => {
   store.set(isPlayingAtom, true);
   const view = render(
     <Provider store={store}>
-      <FloatingMiniPlayer />
+      <MemoryRouter>
+        <FloatingMiniPlayer />
+      </MemoryRouter>
     </Provider>
   );
   return { store, ...view };
@@ -80,6 +83,84 @@ afterEach(() => {
 });
 
 describe('player UI and real playback hook', () => {
+  it('opens linked artist/publisher routes without restarting the selected audio', async () => {
+    const user = userEvent.setup();
+    const { store } = setup();
+    await waitFor(() => expect(elements[0].src).toContain('/first'));
+    expect(
+      screen
+        .getByRole('link', { name: 'Publisher: @publisher' })
+        .getAttribute('href')
+    ).toBe('/publishers/publisher');
+    await user.click(screen.getByRole('link', { name: 'Artist: Artist' }));
+    expect(elements).toHaveLength(1);
+    expect(elements[0].play).toHaveBeenCalledOnce();
+    expect(store.get(currentTrackAtom)?.identifier).toBe('first');
+    expect(store.get(isPlayingAtom)).toBe(true);
+  });
+
+  it('repeats one on ended, then continues normally when repeat is disabled', async () => {
+    const user = userEvent.setup();
+    const { store } = setup();
+    await waitFor(() => expect(elements[0].src).toContain('/first'));
+    await user.click(screen.getByRole('button', { name: 'Repeat: off' }));
+    await user.click(screen.getByRole('button', { name: 'Repeat queue' }));
+    act(() => elements[0].dispatchEvent(new Event('ended')));
+    await waitFor(() => expect(elements[1]?.src).toContain('/first'));
+    expect(store.get(currentTrackAtom)?.identifier).toBe('first');
+    await user.click(screen.getByRole('button', { name: 'Repeat one' }));
+    act(() => elements[1].dispatchEvent(new Event('ended')));
+    await waitFor(() => expect(elements[2]?.src).toContain('/second'));
+    act(() => elements[2].dispatchEvent(new Event('ended')));
+    expect(store.get(isPlayingAtom)).toBe(false);
+  });
+  it('wraps the queue after its last song when repeat queue is enabled', async () => {
+    const user = userEvent.setup();
+    const { store } = setup();
+    await waitFor(() => expect(elements[0].src).toContain('/first'));
+    await user.click(screen.getByRole('button', { name: 'Next song' }));
+    await waitFor(() => expect(elements[1]?.src).toContain('/second'));
+    await user.click(screen.getByRole('button', { name: 'Repeat: off' }));
+    act(() => elements[1].dispatchEvent(new Event('ended')));
+    await waitFor(() => expect(elements[2]?.src).toContain('/first'));
+    expect(store.get(isPlayingAtom)).toBe(true);
+  });
+  it('toggles shuffle without restarting audio and preserves queue order with actual listening history', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const user = userEvent.setup();
+    const { store } = setup();
+    act(() =>
+      store.set(queueAtom, [track('first'), track('second'), track('third')])
+    );
+    await waitFor(() => expect(elements[0].src).toContain('/first'));
+    await user.click(
+      screen.getByRole('button', { name: 'Shuffle', exact: true })
+    );
+    expect(elements).toHaveLength(1);
+    expect(
+      screen
+        .getByRole('button', { name: 'Shuffle', exact: true })
+        .getAttribute('aria-pressed')
+    ).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Next song' }));
+    await waitFor(() => expect(elements[1]?.src).toContain('/second'));
+    await user.click(screen.getByRole('button', { name: 'Previous song' }));
+    await waitFor(() => expect(elements[2]?.src).toContain('/first'));
+    await user.click(screen.getByRole('button', { name: 'Next song' }));
+    await waitFor(() => expect(elements[3]?.src).toContain('/second'));
+    await user.click(screen.getByRole('button', { name: 'Next song' }));
+    await waitFor(() => expect(elements[4]?.src).toContain('/third'));
+    expect(store.get(queueAtom).map((item) => item.identifier)).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
+    expect(
+      (screen.getByRole('button', { name: 'Next song' }) as HTMLButtonElement)
+        .disabled
+    ).toBe(true);
+  });
+
   it('seeks with the position control while playing and paused without restarting playback', async () => {
     const user = userEvent.setup();
     const { store } = setup();
@@ -147,7 +228,9 @@ describe('player UI and real playback hook', () => {
     store.set(isPlayingAtom, true);
     render(
       <Provider store={store}>
-        <FloatingMiniPlayer />
+        <MemoryRouter>
+          <FloatingMiniPlayer />
+        </MemoryRouter>
       </Provider>
     );
     await waitFor(() => expect(elements[0].src).toContain('/same'));

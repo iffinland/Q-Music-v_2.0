@@ -1,195 +1,90 @@
-import { Button, Stack, Typography } from '@mui/material';
-import { Link as RouterLink } from 'react-router-dom';
-import { PageHero } from '../components/common/PageHero';
-import { SectionCard } from '../components/common/SectionCard';
+import { Alert, Button, Stack, Typography } from '@mui/material';
+import { Link } from 'react-router-dom';
+import { MediaSection } from '../components/common/MediaSection';
+import { LibraryControls } from '../components/shell/LibraryControls';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
-import { LibraryControls } from '../components/shell/LibraryControls';
-import {
-  formatPlaylistCardMetadata,
-  formatPlaylistTrackCount,
-} from '../utils/playlistMetadata';
-import { formatSongCardMetadata } from '../utils/songMetadata';
+import { usePlaylistPlayback } from '../hooks/usePlaylistPlayback';
+import type { SongSummary } from '../types/media';
+import { songQueue } from '../utils/songQueue';
 
-const libraryHighlights = [
-  'Save songs and playlists from their detail pages to keep them here across sessions.',
-  'Recent listening history fills automatically when you play audio from browse or detail views.',
-  'Podcasts and audiobooks remain outside this release and are not shown in the library.',
-];
-
-export const LibraryPage = () => {
-  const {
-    account,
-    favoritePlaylists,
-    favoriteSongs,
-    recentSongs,
-    syncState,
-    addRecentSong,
-  } = useLibrary();
-  const { playTrack } = useMiniPlayer();
-  const playlistCountsLoading = syncState === 'loading';
-
+const LibraryContent = ({
+  library,
+}: {
+  library: ReturnType<typeof useLibrary>;
+}) => {
+  const { favoriteSongs, favoritePlaylists, recentSongs, addRecentSong } =
+    library;
+  const { playQueue } = useMiniPlayer();
+  const playlistPlayer = usePlaylistPlayback();
+  const playSong = (song: SongSummary, visible: SongSummary[]) => {
+    addRecentSong(song);
+    playQueue(
+      songQueue(visible),
+      visible.findIndex((item) => item.id === song.id)
+    );
+  };
+  const empty =
+    !favoriteSongs.length && !favoritePlaylists.length && !recentSongs.length;
   return (
-    <Stack spacing={3}>
-      <PageHero
-        eyebrow=""
-        title="Your saved songs, playlists and recent listening history."
-        description="Keep the content you care about close, reopen playlists quickly and jump back into recent listening sessions."
-      />
-      <LibraryControls key={account.key} />
-      {recentSongs.length > 0 ? (
-        <Stack spacing={2}>
-          <Typography variant="h4">Recently Played</Typography>
-          {recentSongs.map((song) => (
-            <SectionCard
-              originIdentifier={song.identifier}
-              key={`recent-${song.id}`}
-              kicker={song.artist}
-              title={song.title}
-              body={formatSongCardMetadata({
-                title: song.title,
-                publisher: song.publisher,
-                description: song.description,
-                notesMaxLength: 80,
-              })}
-              meta={['RECENT', song.publisher]}
-              action={
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  <Button
-                    variant="contained"
-                    onClick={() => {
-                      addRecentSong(song);
-                      playTrack({
-                        key: `${song.publisher}:${song.identifier}`,
-                        id: song.id,
-                        identifier: song.identifier,
-                        publisher: song.publisher,
-                        service: 'AUDIO',
-                        title: song.title,
-                        artist: song.artist,
-                        context: song.publisher,
-                      });
-                    }}
-                  >
-                    Play again
-                  </Button>
-                  <Button
-                    component={RouterLink}
-                    to={`/songs/${encodeURIComponent(song.publisher)}/${encodeURIComponent(song.identifier)}`}
-                    variant="outlined"
-                  >
-                    Open
-                  </Button>
-                </Stack>
-              }
-            />
-          ))}
-        </Stack>
+    <Stack spacing={{ xs: 3, md: 4 }}>
+      <Stack spacing={0.5}>
+        <Typography component="h1" variant="h2" sx={{ fontWeight: 800 }}>
+          Your Library
+        </Typography>
+        <Typography color="text.secondary">
+          Your saved songs, playlists and recent listening history.
+        </Typography>
+      </Stack>
+      <LibraryControls />
+      {playlistPlayer.error ? (
+        <Alert severity="warning">{playlistPlayer.error}</Alert>
       ) : null}
-      {favoriteSongs.length > 0 ? (
-        <Stack spacing={2}>
-          <Typography variant="h4">Saved Songs</Typography>
-          {favoriteSongs.map((song) => (
-            <SectionCard
-              originIdentifier={song.identifier}
-              key={song.id}
-              kicker={song.artist}
-              title={song.title}
-              body={formatSongCardMetadata({
-                title: song.title,
-                publisher: song.publisher,
-                description: song.description,
-                notesMaxLength: 80,
-              })}
-              meta={['AUDIO', song.publisher]}
-              action={
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  <Button
-                    variant="contained"
-                    onClick={() => {
-                      addRecentSong(song);
-                      playTrack({
-                        key: `${song.publisher}:${song.identifier}`,
-                        id: song.id,
-                        identifier: song.identifier,
-                        publisher: song.publisher,
-                        service: 'AUDIO',
-                        title: song.title,
-                        artist: song.artist,
-                        context: song.publisher,
-                      });
-                    }}
-                  >
-                    Play
-                  </Button>
-                  <Button
-                    component={RouterLink}
-                    to={`/songs/${encodeURIComponent(song.publisher)}/${encodeURIComponent(song.identifier)}`}
-                    variant="outlined"
-                  >
-                    Open
-                  </Button>
-                </Stack>
-              }
-            />
-          ))}
+      {empty ? (
+        <Stack spacing={1} alignItems="flex-start">
+          <Typography color="text.secondary">
+            Save songs and playlists from their details to keep them here.
+            Recent listening appears when you play music.
+          </Typography>
+          <Button component={Link} to="/songs" variant="outlined">
+            Browse music
+          </Button>
         </Stack>
-      ) : null}
-      {favoritePlaylists.length > 0 ? (
-        <Stack spacing={2}>
-          <Typography variant="h4">Saved Playlists</Typography>
-          {favoritePlaylists.map((playlist) => (
-            <SectionCard
-              originIdentifier={playlist.identifier}
-              key={playlist.id}
-              kicker={playlist.publisher}
-              title={playlist.title}
-              body={formatPlaylistCardMetadata({
-                title: playlist.title,
-                publisher: playlist.publisher,
-                description: playlist.description,
-                publishedDate: playlist.publishedDate,
-                songCount: playlist.songCount,
-                isTrackCountLoading: playlistCountsLoading,
-              })}
-              meta={[
-                'PLAYLIST',
-                formatPlaylistTrackCount(playlist.songCount, {
-                  isLoading: playlistCountsLoading,
-                }),
-              ]}
-              action={
-                <Button
-                  component={RouterLink}
-                  to={`/playlists/${encodeURIComponent(playlist.publisher)}/${encodeURIComponent(playlist.identifier)}`}
-                  variant="outlined"
-                >
-                  Open playlist
-                </Button>
-              }
-            />
-          ))}
-        </Stack>
-      ) : null}
-      {favoriteSongs.length === 0 &&
-      favoritePlaylists.length === 0 &&
-      recentSongs.length === 0
-        ? libraryHighlights.map((item) => (
-            <Typography
-              key={item}
-              variant="body1"
-              sx={{
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 2,
-                p: 2,
-                backgroundColor: 'var(--qm-surface-soft)',
-              }}
-            >
-              {item}
-            </Typography>
-          ))
-        : null}
+      ) : (
+        <>
+          <MediaSection
+            classicColumns={1}
+            title="Recently Played"
+            kind="song"
+            items={recentSongs}
+            emptyText="Your recent listening will appear here."
+            onPlay={playSong}
+          />
+          <MediaSection
+            classicColumns={1}
+            title="Saved Songs"
+            kind="song"
+            items={favoriteSongs}
+            emptyText="Save a song from its details to add it here."
+            onPlay={playSong}
+          />
+          <MediaSection
+            classicColumns={1}
+            title="Saved Playlists"
+            kind="playlist"
+            items={favoritePlaylists}
+            emptyText="Save a playlist from its details to add it here."
+            loadingId={playlistPlayer.loadingId}
+            onPlay={(playlist) => void playlistPlayer.play(playlist)}
+          />
+        </>
+      )}
     </Stack>
   );
+};
+
+export const LibraryPage = () => {
+  const library = useLibrary();
+  // Reset collection pages/dialogs and cancel old playlist-start work on account changes.
+  return <LibraryContent key={library.account.key} library={library} />;
 };

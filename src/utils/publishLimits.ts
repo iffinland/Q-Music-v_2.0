@@ -38,6 +38,10 @@ export const FOLDER_IMAGE_EXTENSIONS = [
   'bmp',
 ] as const;
 
+export const AUDIO_FORMATS_HELP = `Audio files: ${FOLDER_AUDIO_EXTENSIONS.map((extension) => extension.toUpperCase()).join(', ')}. Other files identified as audio may also be accepted for single-file publishing. Playback depends on your device and codec; audio is not converted.`;
+export const COVER_FORMATS_HELP =
+  'Cover images: JPG/JPEG, PNG, WebP, GIF or BMP that your device can open. Maximum 12 MiB and 40 megapixels. Covers are optional and are prepared as square JPEG images.';
+
 export const AUDIO_LIMIT_TEXT =
   'Audio limits: 500 MiB on public nodes; 2000 MiB on your own node. Playback support depends on the browser and audio codec.';
 export const COVER_LIMIT_TEXT =

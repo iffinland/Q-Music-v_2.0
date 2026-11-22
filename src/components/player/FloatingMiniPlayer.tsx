@@ -1,3 +1,5 @@
+import { CreatorLink } from '../common/CreatorLink';
+import { QueueNavigator } from '../../services/queueNavigator';
 import { VolumeControl } from './VolumeControl';
 import { PublicationBadge } from '../common/PublicationBadge';
 import {
@@ -9,6 +11,9 @@ import {
   SouthRounded,
   SkipNextRounded,
   SkipPreviousRounded,
+  ShuffleRounded,
+  RepeatRounded,
+  RepeatOneRounded,
 } from '@mui/icons-material';
 import {
   Alert,
@@ -27,6 +32,8 @@ import { ImageLightbox } from '../common/ImageLightbox';
 import { useAudioPlayback } from '../../hooks/useAudioPlayback';
 import {
   playbackAttemptAtom,
+  repeatModeAtom,
+  shuffleAtom,
   currentTimeAtom,
   currentTrackAtom,
   durationAtom,
@@ -82,20 +89,27 @@ export const FloatingMiniPlayer = () => {
     dragStateRef.current = null;
   }, []);
 
-  const currentIndex = useMemo(() => {
-    if (!currentTrack) return -1;
-    return queue.findIndex((item) => item.key === currentTrack.key);
-  }, [currentTrack, queue]);
-
-  const selectTrackAt = useCallback(
-    (index: number) => {
-      const nextTrack = queue[index];
-      if (!nextTrack) return;
-      setCurrentTrack(nextTrack);
-      setIsPlaying(true);
-    },
-    [queue, setCurrentTrack, setIsPlaying]
-  );
+  const [repeat, setRepeat] = useAtom(repeatModeAtom);
+  const [shuffle, setShuffle] = useAtom(shuffleAtom);
+  const keys = useMemo(() => queue.map((track) => track.key), [queue]);
+  const navigation = useRef<QueueNavigator | null>(null);
+  navigation.current ??= new QueueNavigator();
+  const navigator = navigation.current;
+  navigator.sync(keys, currentTrack?.key ?? null, shuffle);
+  const selectKey = (key: string | null) => {
+    const next = queue.find((track) => track.key === key);
+    if (!next) return;
+    if (next.key === currentTrack?.key)
+      setPlaybackAttempt((value) => value + 1);
+    setCurrentTrack(next);
+    setIsPlaying(true);
+  };
+  const repeatLabel =
+    repeat === 'off'
+      ? 'Repeat: off'
+      : repeat === 'all'
+        ? 'Repeat queue'
+        : 'Repeat one';
 
   const {
     status: resourceStatusLabel,
@@ -114,8 +128,8 @@ export const FloatingMiniPlayer = () => {
     onUrl: setStreamUrlValue,
     onError: setPlayerError,
     onEnded: () => {
-      const nextIndex = currentIndex + 1;
-      if (nextIndex > 0 && nextIndex < queue.length) selectTrackAt(nextIndex);
+      const next = navigator.next(repeat, true);
+      if (next) selectKey(next);
       else setIsPlaying(false);
     },
   });
@@ -360,8 +374,14 @@ export const FloatingMiniPlayer = () => {
               {currentTrack.title}
             </Typography>
             <Typography variant="body2" noWrap sx={{ color: 'text.secondary' }}>
-              {currentTrack.artist}
-              {currentTrack.context ? ` • ${currentTrack.context}` : ''}
+              <CreatorLink kind="artist" name={currentTrack.artist} />
+              {' • '}
+              <CreatorLink kind="publisher" name={currentTrack.publisher} />
+              {currentTrack.context &&
+              currentTrack.context !== currentTrack.publisher &&
+              currentTrack.context !== currentTrack.artist
+                ? ` • ${currentTrack.context}`
+                : ''}
             </Typography>
           </Box>
           <Stack direction="row" spacing={0.25} alignItems="center">
@@ -390,15 +410,26 @@ export const FloatingMiniPlayer = () => {
         </Stack>
         <Stack
           direction="row"
-          spacing={1}
+          spacing={{ xs: 0.25, sm: 1 }}
           alignItems="center"
           justifyContent="center"
+          flexWrap="wrap"
+          useFlexGap
         >
+          <IconButton
+            aria-label="Shuffle"
+            title="Shuffle this queue"
+            aria-pressed={shuffle}
+            color={shuffle ? 'primary' : 'inherit'}
+            onClick={() => setShuffle((value) => !value)}
+          >
+            <ShuffleRounded />
+          </IconButton>
           <IconButton
             color="inherit"
             aria-label="Previous song"
-            disabled={currentIndex <= 0}
-            onClick={() => selectTrackAt(currentIndex - 1)}
+            disabled={!navigator.canPrevious(repeat)}
+            onClick={() => selectKey(navigator.previous(repeat))}
           >
             <SkipPreviousRounded />
           </IconButton>
@@ -416,10 +447,23 @@ export const FloatingMiniPlayer = () => {
           <IconButton
             color="inherit"
             aria-label="Next song"
-            disabled={currentIndex < 0 || currentIndex >= queue.length - 1}
-            onClick={() => selectTrackAt(currentIndex + 1)}
+            disabled={!navigator.canNext(repeat)}
+            onClick={() => selectKey(navigator.next(repeat))}
           >
             <SkipNextRounded />
+          </IconButton>
+          <IconButton
+            aria-label={repeatLabel}
+            title={`${repeatLabel}. Click to change repeat mode.`}
+            aria-pressed={repeat !== 'off'}
+            color={repeat !== 'off' ? 'primary' : 'inherit'}
+            onClick={() =>
+              setRepeat(
+                repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off'
+              )
+            }
+          >
+            {repeat === 'one' ? <RepeatOneRounded /> : <RepeatRounded />}
           </IconButton>
           <VolumeControl />
         </Stack>

@@ -1,3 +1,4 @@
+import { CreatorLink } from '../components/common/CreatorLink';
 import { getQdnResourceUrl } from '../services/qdn';
 import { useState as useCommentState } from 'react';
 import {
@@ -259,6 +260,10 @@ export const SongDetailPage = () => {
         <Typography variant="body2">Loading song details...</Typography>
       ) : song ? (
         <Stack spacing={1.75}>
+          <Stack direction="row" spacing={1.5} useFlexGap flexWrap="wrap">
+            <CreatorLink kind="publisher" name={song.publisher} />
+            <CreatorLink kind="artist" name={song.artist} />
+          </Stack>
           <Grid container spacing={2.25}>
             {artworkUrl ? (
               <Grid size={{ xs: 12, md: 4 }}>

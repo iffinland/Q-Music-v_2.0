@@ -27,3 +27,6 @@ export const floatingPlayerPositionAtom = atom({ x: 20, y: 20 });
 export const queueLengthAtom = atom((get) => get(queueAtom).length);
 
 export const playbackAttemptAtom = atom(0);
+export type RepeatMode = 'off' | 'all' | 'one';
+export const repeatModeAtom = atom<RepeatMode>('off');
+export const shuffleAtom = atom(false);

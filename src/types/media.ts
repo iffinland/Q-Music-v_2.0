@@ -11,6 +11,7 @@ export interface QdnSearchResource {
 }
 
 export interface SongSummary {
+  tags?: string[];
   id: string;
   identifier: string;
   publisher: string;
@@ -39,6 +40,7 @@ export interface PlaylistSongReference {
 }
 
 export interface PlaylistSummary {
+  tags?: string[];
   id: string;
   identifier: string;
   publisher: string;

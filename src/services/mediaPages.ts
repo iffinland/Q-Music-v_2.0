@@ -14,6 +14,7 @@ export interface MediaPageOptions extends ReadOptions {
   offset?: number;
   publisher?: string;
   before?: number;
+  reverse?: boolean;
 }
 
 export interface PrefixCursor {
@@ -84,7 +85,7 @@ export const readMediaPrefixesPage = async <T extends { id: string }>(
           ...(options.before ? { before: options.before } : {}),
           limit: target,
           offset: state.offset,
-          reverse: true,
+          reverse: options.reverse ?? true,
           includeMetadata: true,
           includeStatus: false,
           excludeBlocked: true,
@@ -116,7 +117,8 @@ export const readMediaPrefixesPage = async <T extends { id: string }>(
     if (!candidates.length) break;
     candidates.sort(
       (a, b) =>
-        (b.value.resource.created || 0) - (a.value.resource.created || 0) ||
+        ((options.reverse ?? true) ? -1 : 1) *
+          ((a.value.resource.created || 0) - (b.value.resource.created || 0)) ||
         a.value.item.id.localeCompare(b.value.item.id)
     );
     const chosen = candidates[0];

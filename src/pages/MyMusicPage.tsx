@@ -1,41 +1,89 @@
-import { isEarBumpIdentifier } from '../utils/mediaOrigin';
-import { Alert, Button, Grid, Stack, Typography } from '@mui/material';
-import { useGlobal } from '../qortal';
+import { Alert, Box, Button, Stack, Typography } from '@mui/material';
 import { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
-import { ArtworkThumb } from '../components/common/ArtworkThumb';
-import { PageHero } from '../components/common/PageHero';
-import { SectionCard } from '../components/common/SectionCard';
+import { Link } from 'react-router-dom';
+import { MediaSection } from '../components/common/MediaSection';
+import { useLibrary } from '../hooks/useLibrary';
+import { useMiniPlayer } from '../hooks/useMiniPlayer';
+import { usePlaylistPlayback } from '../hooks/usePlaylistPlayback';
 import { useSongsFeed } from '../hooks/useSongsFeed';
 import { usePlaylistsFeed } from '../hooks/usePlaylistsFeed';
+import { useGlobal } from '../qortal';
+import type { SongSummary } from '../types/media';
 import { emitMediaRefresh } from '../utils/mediaEvents';
-import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
-import { formatSongCardMetadata } from '../utils/songMetadata';
+import { isEarBumpIdentifier } from '../utils/mediaOrigin';
+import { songQueue } from '../utils/songQueue';
 
-export const MyMusicPage = () => {
-  const { auth } = useGlobal();
-  const publisher = auth?.name?.trim() || '';
-  const [songLimit, setSongLimit] = useState(24);
-  const [playlistLimit, setPlaylistLimit] = useState(24);
+const OwnerAction = ({
+  kind,
+  identifier,
+}: {
+  kind: 'songs' | 'playlists';
+  identifier: string;
+}) =>
+  isEarBumpIdentifier(identifier) ? (
+    <Box
+      sx={{
+        minHeight: 36,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Typography variant="caption" color="text.secondary">
+        Edit through Ear-Bump
+      </Typography>
+    </Box>
+  ) : (
+    <Button
+      component={Link}
+      to={`/my-music/${kind}/${encodeURIComponent(identifier)}/edit`}
+      variant="outlined"
+      fullWidth
+    >
+      {kind === 'songs' ? 'Edit song' : 'Edit playlist'}
+    </Button>
+  );
+
+const OwnedMusic = ({ publisher }: { publisher: string }) => {
+  const [songLimit, setSongLimit] = useState(20);
+  const [playlistLimit, setPlaylistLimit] = useState(20);
   const songFeed = useSongsFeed(songLimit, publisher);
   const playlistFeed = usePlaylistsFeed(playlistLimit, publisher);
-  const { songs } = songFeed;
-  const { playlists } = playlistFeed;
-  const isLoading = songFeed.isLoading || playlistFeed.isLoading;
+  const { playQueue } = useMiniPlayer();
+  const { addRecentSong } = useLibrary();
+  const playlistPlayer = usePlaylistPlayback();
+  const isOwner = (item: { publisher: string }) =>
+    item.publisher.toLowerCase() === publisher.toLowerCase();
+  const songs = songFeed.songs.filter(isOwner);
+  const playlists = playlistFeed.playlists.filter(isOwner);
   const error = songFeed.error || playlistFeed.error;
-
+  const playSong = (song: SongSummary, visible: SongSummary[]) => {
+    addRecentSong(song);
+    playQueue(
+      songQueue(visible),
+      visible.findIndex((item) => item.id === song.id)
+    );
+  };
   return (
-    <Stack spacing={3}>
-      <PageHero
-        eyebrow=""
-        title="Manage your published songs and playlists."
-        description="This workspace is for owner-side actions: review what is already live on QDN, open it directly, or jump into edit flows for republishing updates."
-      />
-      {!publisher ? (
-        <Alert severity="warning">
-          Log in through Qortal to manage your published songs and playlists.
-        </Alert>
-      ) : null}
+    <Stack spacing={{ xs: 3, md: 4 }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        alignItems="center"
+        justifyContent="space-between"
+        useFlexGap
+        flexWrap="wrap"
+      >
+        <Typography variant="body2" color="text.secondary">
+          Published by @{publisher}
+        </Typography>
+        <Button
+          onClick={emitMediaRefresh}
+          disabled={songFeed.isLoading || playlistFeed.isLoading}
+        >
+          Refresh my music
+        </Button>
+      </Stack>
       {error ? (
         <Alert
           severity="warning"
@@ -53,157 +101,62 @@ export const MyMusicPage = () => {
           {error}
         </Alert>
       ) : null}
-      <Button onClick={emitMediaRefresh} disabled={isLoading}>
-        Refresh my music
-      </Button>
-      {isLoading ? (
-        <Typography variant="body2">Loading your published music...</Typography>
+      {playlistPlayer.error ? (
+        <Alert severity="warning">{playlistPlayer.error}</Alert>
       ) : null}
+      <MediaSection
+        title="Your Songs"
+        kind="song"
+        items={songs}
+        emptyText="No published songs were found for your current Qortal name."
+        isLoading={songFeed.isLoading}
+        hasMore={songFeed.hasMore && !songFeed.error}
+        onPage={(page) => setSongLimit((limit) => Math.max(limit, page * 20))}
+        onPlay={playSong}
+        actions={(song) => (
+          <OwnerAction kind="songs" identifier={song.identifier} />
+        )}
+      />
+      <MediaSection
+        title="Your Playlists"
+        kind="playlist"
+        items={playlists}
+        emptyText="No published playlists were found for your current Qortal name."
+        isLoading={playlistFeed.isLoading}
+        hasMore={playlistFeed.hasMore && !playlistFeed.error}
+        onPage={(page) =>
+          setPlaylistLimit((limit) => Math.max(limit, page * 20))
+        }
+        loadingId={playlistPlayer.loadingId}
+        onPlay={(playlist) => void playlistPlayer.play(playlist)}
+        actions={(playlist) => (
+          <OwnerAction kind="playlists" identifier={playlist.identifier} />
+        )}
+      />
+    </Stack>
+  );
+};
 
+export const MyMusicPage = () => {
+  const { auth } = useGlobal();
+  const publisher = auth?.name?.trim() || '';
+  return (
+    <Stack spacing={3}>
+      <Stack spacing={0.5}>
+        <Typography component="h1" variant="h2" sx={{ fontWeight: 800 }}>
+          My Music
+        </Typography>
+        <Typography color="text.secondary">
+          Listen to and manage your published songs and playlists.
+        </Typography>
+      </Stack>
       {publisher ? (
-        <>
-          <Stack spacing={2}>
-            <Typography variant="h4">Your Songs</Typography>
-            {songs.length ? (
-              <Grid container spacing={2.5}>
-                {songs.map((song) => (
-                  <Grid key={song.id} size={{ xs: 12, md: 6 }}>
-                    <SectionCard
-                      originIdentifier={song.identifier}
-                      kicker={song.artist}
-                      title={song.title}
-                      media={
-                        <ArtworkThumb
-                          kind="song"
-                          publisher={song.publisher}
-                          identifier={song.identifier}
-                          title={song.title}
-                        />
-                      }
-                      body={formatSongCardMetadata({
-                        title: song.title,
-                        publisher: song.publisher,
-                        description: song.description,
-                        notesMaxLength: 80,
-                      })}
-                      meta={['AUDIO', 'Owner item']}
-                      action={
-                        <Stack
-                          direction={{ xs: 'column', sm: 'row' }}
-                          spacing={1}
-                        >
-                          <Button
-                            component={RouterLink}
-                            to={`/songs/${encodeURIComponent(song.publisher)}/${encodeURIComponent(song.identifier)}`}
-                            variant="outlined"
-                            fullWidth
-                          >
-                            Open
-                          </Button>
-                          {!isEarBumpIdentifier(song.identifier) && (
-                            <Button
-                              component={RouterLink}
-                              to={`/my-music/songs/${encodeURIComponent(song.identifier)}/edit`}
-                              variant="contained"
-                              fullWidth
-                            >
-                              Edit song
-                            </Button>
-                          )}
-                        </Stack>
-                      }
-                    />
-                  </Grid>
-                ))}
-              </Grid>
-            ) : (
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                No published songs were found for your current Qortal name.
-              </Typography>
-            )}
-            {songFeed.hasMore ? (
-              <Button
-                variant="outlined"
-                disabled={songFeed.isLoading}
-                onClick={() => setSongLimit((current) => current + 24)}
-              >
-                Load more songs
-              </Button>
-            ) : null}
-          </Stack>
-
-          <Stack spacing={2}>
-            <Typography variant="h4">Your Playlists</Typography>
-            {playlists.length ? (
-              <Grid container spacing={2.5}>
-                {playlists.map((playlist) => (
-                  <Grid key={playlist.id} size={{ xs: 12, md: 4 }}>
-                    <SectionCard
-                      originIdentifier={playlist.identifier}
-                      kicker={playlist.publisher}
-                      title={playlist.title}
-                      media={
-                        <ArtworkThumb
-                          kind="playlist"
-                          publisher={playlist.publisher}
-                          identifier={playlist.identifier}
-                          title={playlist.title}
-                        />
-                      }
-                      body={formatPlaylistCardMetadata({
-                        title: playlist.title,
-                        publisher: playlist.publisher,
-                        description: playlist.description,
-                        publishedDate: playlist.publishedDate,
-                        songCount: playlist.songCount,
-                      })}
-                      meta={['PLAYLIST', 'Owner item']}
-                      action={
-                        <Stack
-                          direction={{ xs: 'column', sm: 'row' }}
-                          spacing={1}
-                        >
-                          <Button
-                            component={RouterLink}
-                            to={`/playlists/${encodeURIComponent(playlist.publisher)}/${encodeURIComponent(playlist.identifier)}`}
-                            variant="outlined"
-                            fullWidth
-                          >
-                            Open
-                          </Button>
-                          {!isEarBumpIdentifier(playlist.identifier) && (
-                            <Button
-                              component={RouterLink}
-                              to={`/my-music/playlists/${encodeURIComponent(playlist.identifier)}/edit`}
-                              variant="contained"
-                              fullWidth
-                            >
-                              Edit playlist
-                            </Button>
-                          )}
-                        </Stack>
-                      }
-                    />
-                  </Grid>
-                ))}
-              </Grid>
-            ) : (
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                No published playlists were found for your current Qortal name.
-              </Typography>
-            )}
-            {playlistFeed.hasMore ? (
-              <Button
-                variant="outlined"
-                disabled={playlistFeed.isLoading}
-                onClick={() => setPlaylistLimit((current) => current + 24)}
-              >
-                Load more playlists
-              </Button>
-            ) : null}
-          </Stack>
-        </>
-      ) : null}
+        <OwnedMusic key={publisher.toLowerCase()} publisher={publisher} />
+      ) : (
+        <Alert severity="warning">
+          Log in through Qortal to manage your published songs and playlists.
+        </Alert>
+      )}
     </Stack>
   );
 };

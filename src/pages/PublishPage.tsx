@@ -46,6 +46,8 @@ import {
 } from '../utils/publishFolder';
 import {
   AUDIO_INPUT_ACCEPT,
+  AUDIO_FORMATS_HELP,
+  AUDIO_LIMIT_TEXT,
   MAX_JOB_FILES,
   MAX_JOB_FILE_BYTES,
 } from '../utils/publishLimits';
@@ -731,6 +733,11 @@ export const PublishPage = () => {
                   gap: 2.5,
                 }}
               >
+                {(mode === 'song' || mode === 'folder') && (
+                  <Typography variant="caption" color="text.secondary">
+                    {AUDIO_FORMATS_HELP} {AUDIO_LIMIT_TEXT}
+                  </Typography>
+                )}
                 {mode === 'song' && (
                   <>
                     <Button component="label" variant="outlined">

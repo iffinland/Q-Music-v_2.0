@@ -1,10 +1,27 @@
+import { AppearanceDialog } from './AppearanceDialog';
+import { skinAtom } from '../../state/appearance';
 import { refreshAccount } from '../../qortal';
 import { appVersion } from '../../qapp-config';
 import {
   DarkModeRounded,
+  PaletteRounded,
+  HelpOutlineRounded,
+  SearchRounded,
+  ShuffleRounded,
   LightModeRounded,
   MenuRounded,
   QueueMusicRounded,
+  HomeRounded,
+  LibraryMusicRounded,
+  HeadphonesRounded,
+  AudioFileRounded,
+  CloudUploadRounded,
+  ChatRounded,
+  PodcastsRounded,
+  MenuBookRounded,
+  FavoriteRounded,
+  ChevronLeftRounded,
+  ChevronRightRounded,
 } from '@mui/icons-material';
 import {
   AppBar,
@@ -20,12 +37,12 @@ import {
   List,
   ListItemButton,
   ListItemText,
+  ListItemIcon,
   Stack,
   TextField,
   Toolbar,
   Typography,
 } from '@mui/material';
-import { keyframes } from '@mui/system';
 import {
   showError,
   showSuccess,
@@ -34,12 +51,14 @@ import {
 } from '../../qortal';
 import {
   useState,
+  lazy,
+  Suspense,
   type ChangeEvent,
   type MouseEvent,
   type ReactNode,
 } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { useAtom } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { useIframe } from '../../hooks/useIframeListener';
 import { useLibrary } from '../../hooks/useLibrary';
 import { queueLengthAtom } from '../../state/player';
@@ -47,13 +66,19 @@ import { EnumTheme, themeAtom } from '../../state/global/system';
 import { LibrarySync } from './LibrarySync';
 import { FloatingMiniPlayer } from '../player/FloatingMiniPlayer';
 
+const HelpDialog = lazy(() =>
+  import('./HelpDialog').then((module) => ({ default: module.HelpDialog }))
+);
+
 const navigationItems = [
-  { label: 'Home', to: '/' },
-  { label: 'Browse All', to: '/songs' },
-  { label: 'Playlists', to: '/playlists/all' },
-  { label: 'Library', to: '/library' },
-  { label: 'My Music', to: '/my-music' },
-  { label: 'Publish Audio', to: '/publish' },
+  { label: 'Home', to: '/', icon: HomeRounded },
+  { label: 'Search', to: '/search', icon: SearchRounded },
+  { label: 'Discover Mix', to: '/discover', icon: ShuffleRounded },
+  { label: 'Browse All', to: '/songs', icon: HeadphonesRounded },
+  { label: 'Playlists', to: '/playlists/all', icon: QueueMusicRounded },
+  { label: 'Library', to: '/library', icon: LibraryMusicRounded },
+  { label: 'My Music', to: '/my-music', icon: AudioFileRounded },
+  { label: 'Publish Audio', to: '/publish', icon: CloudUploadRounded },
 ];
 
 const drawerWidth = 280;
@@ -61,26 +86,22 @@ const chatGroupId = 827;
 const chatJoinUri = `qortal://use-group/action-join/groupid-${chatGroupId}`;
 const podcastsAppUri = 'qortal://APP/Q-Podcasts';
 const supportRecipient = 'QTowvz1e89MP4FEFpHvEfZ4x8G3LwMpthz';
-const supportFlow = keyframes`
-  0% {
-    background-position: 0% 50%;
-    box-shadow: 0 10px 28px rgba(26, 193, 165, 0.18);
-  }
-  50% {
-    background-position: 100% 50%;
-    box-shadow: 0 12px 32px rgba(58, 151, 255, 0.24);
-  }
-  100% {
-    background-position: 0% 50%;
-    box-shadow: 0 10px 28px rgba(26, 193, 165, 0.18);
-  }
-`;
 
 interface AppShellProps {
   children: ReactNode;
 }
 
-const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
+const NavigationContent = ({
+  onNavigate,
+  collapsed = false,
+  onOpenAppearance,
+  onOpenHelp,
+}: {
+  onNavigate?: () => void;
+  collapsed?: boolean;
+  onOpenAppearance?: () => void;
+  onOpenHelp?: () => void;
+}) => {
   const location = useLocation();
   const {
     value: qortBalance,
@@ -184,10 +205,14 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
+        overflowY: 'auto',
         background: 'var(--qm-panel-bg)',
       }}
     >
-      <List sx={{ px: 1.5, pt: 2.5, pb: 2, flexGrow: 1 }}>
+      <List
+        aria-label="Main navigation"
+        sx={{ px: collapsed ? 1 : 1.5, pt: 1.5, pb: 2, flexGrow: 1 }}
+      >
         {navigationItems.map((item) => {
           const selected =
             item.to === '/'
@@ -200,6 +225,8 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
               key={item.to}
               component={NavLink}
               to={item.to}
+              aria-label={item.label}
+              title={collapsed ? item.label : undefined}
               selected={selected}
               onClick={onNavigate}
               sx={{
@@ -210,22 +237,32 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
                 },
               }}
             >
-              <ListItemText
-                primary={item.label}
-                secondary={selected ? 'Current view' : undefined}
-                primaryTypographyProps={{ fontWeight: selected ? 700 : 500 }}
-              />
+              <ListItemIcon
+                sx={{
+                  minWidth: collapsed ? 0 : 36,
+                  color: 'inherit',
+                  mx: collapsed ? 'auto' : 0,
+                }}
+              >
+                <item.icon />
+              </ListItemIcon>
+              {!collapsed ? (
+                <ListItemText
+                  primary={item.label}
+                  primaryTypographyProps={{ fontWeight: selected ? 700 : 500 }}
+                />
+              ) : null}
             </ListItemButton>
           );
         })}
       </List>
-      <Box sx={{ p: 2.5 }}>
+      <Box sx={{ p: collapsed ? 0.75 : 2 }}>
         <Box
           sx={{
             borderRadius: 2,
             border: '1px solid',
             borderColor: 'divider',
-            p: 2,
+            p: collapsed ? 0.25 : 1.5,
             backgroundColor: 'var(--qm-surface-soft)',
           }}
         >
@@ -234,53 +271,112 @@ const NavigationContent = ({ onNavigate }: { onNavigate?: () => void }) => {
               variant="contained"
               fullWidth
               component="a"
+              aria-label="Join Our Chat"
+              title="Join Our Chat"
               href={chatJoinUri}
               onClick={handleJoinChat}
-              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
+              sx={{
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                minWidth: 0,
+                px: collapsed ? 0.5 : 2,
+                borderRadius: 2,
+              }}
             >
-              Join Our Chat
+              {collapsed ? <ChatRounded /> : 'Join Our Chat'}
             </Button>
             <Button
               variant="outlined"
               fullWidth
               component="a"
+              aria-label="Podcast"
+              title="Podcast"
               href={podcastsAppUri}
               onClick={handleOpenPodcasts}
-              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
+              sx={{
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                minWidth: 0,
+                px: collapsed ? 0.5 : 2,
+                borderRadius: 2,
+              }}
             >
-              Podcast
+              {collapsed ? <PodcastsRounded /> : 'Podcast'}
             </Button>
             <Button
               variant="outlined"
               fullWidth
               disabled
-              sx={{ justifyContent: 'flex-start', borderRadius: 2 }}
+              aria-label="Audiobooks"
+              title="Audiobooks"
+              sx={{
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                minWidth: 0,
+                px: collapsed ? 0.5 : 2,
+                borderRadius: 2,
+              }}
             >
-              Audiobooks
+              {collapsed ? <MenuBookRounded /> : 'Audiobooks'}
             </Button>
             <Button
               variant="contained"
               fullWidth
+              aria-label="Support Project"
+              title="Support Project"
               onClick={handleOpenSupport}
               sx={{
-                justifyContent: 'flex-start',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                minWidth: 0,
+                px: collapsed ? 0.5 : 2,
                 borderRadius: 2,
                 color: '#f5fffd',
                 background:
                   'linear-gradient(120deg, #0d7286 0%, #18b8a2 38%, #3a97ff 72%, #27d3a8 100%)',
                 backgroundSize: '220% 220%',
-                animation: `${supportFlow} 10s ease-in-out infinite`,
                 '&:hover': {
                   background:
                     'linear-gradient(120deg, #0f7f93 0%, #1ac1a5 38%, #45a0ff 72%, #30dbb0 100%)',
                 },
               }}
             >
-              Support Project
+              {collapsed ? <FavoriteRounded /> : 'Support Project'}
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              aria-label="Appearance"
+              title="Appearance"
+              onClick={onOpenAppearance}
+              sx={{
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                minWidth: 0,
+                px: collapsed ? 0.5 : 2,
+                borderRadius: 2,
+              }}
+            >
+              {collapsed ? <PaletteRounded /> : 'Appearance'}
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              aria-label="Help"
+              title="Help"
+              onClick={onOpenHelp}
+              sx={{
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                minWidth: 0,
+                px: collapsed ? 0.5 : 2,
+                borderRadius: 2,
+              }}
+            >
+              {collapsed ? <HelpOutlineRounded /> : 'Help'}
             </Button>
             <Typography
               variant="caption"
-              sx={{ color: 'text.secondary', px: 0.5 }}
+              sx={{
+                color: 'text.secondary',
+                px: 0.5,
+                fontSize: collapsed ? '0.6rem' : undefined,
+                overflowWrap: 'anywhere',
+              }}
             >
               v{appVersion}
             </Typography>
@@ -345,7 +441,37 @@ export const AppShell = ({ children }: AppShellProps) => {
   const queueLength = useAtom(queueLengthAtom)[0];
   const { syncState: librarySyncState, pending: libraryPending } = useLibrary();
   const [theme, setTheme] = useAtom(themeAtom);
+  const skin = useAtomValue(skinAtom);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const openHelp = () => {
+    setMobileOpen(false);
+    setHelpOpen(true);
+  };
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsedPreference, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('qmusic-nav-collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const collapsed = skin === 'modern' && collapsedPreference;
+  const openAppearance = () => {
+    setMobileOpen(false);
+    setAppearanceOpen(true);
+  };
+  const toggleNavigation = () => {
+    setCollapsed((previous) => {
+      try {
+        localStorage.setItem('qmusic-nav-collapsed', String(!previous));
+      } catch {
+        /* Keep usable in memory. */
+      }
+      return !previous;
+    });
+  };
+  const desktopWidth = collapsed ? 80 : drawerWidth;
   const isLightTheme = theme === EnumTheme.LIGHT;
 
   return (
@@ -370,6 +496,7 @@ export const AppShell = ({ children }: AppShellProps) => {
         >
           <IconButton
             color="inherit"
+            aria-label="Open navigation"
             edge="start"
             sx={{ display: { md: 'none' } }}
             onClick={() => setMobileOpen(true)}
@@ -509,14 +636,18 @@ export const AppShell = ({ children }: AppShellProps) => {
           '& .MuiDrawer-paper': { width: drawerWidth },
         }}
       >
-        <NavigationContent onNavigate={() => setMobileOpen(false)} />
+        <NavigationContent
+          onNavigate={() => setMobileOpen(false)}
+          onOpenAppearance={openAppearance}
+          onOpenHelp={openHelp}
+        />
       </Drawer>
 
       <Box sx={{ display: 'flex' }}>
         <Box
           component="aside"
           sx={{
-            width: { md: drawerWidth },
+            width: { md: desktopWidth },
             flexShrink: 0,
             display: { xs: 'none', md: 'block' },
             borderRight: '1px solid',
@@ -524,9 +655,39 @@ export const AppShell = ({ children }: AppShellProps) => {
           }}
         >
           <Box
-            sx={{ position: 'sticky', top: 65, height: 'calc(100vh - 65px)' }}
+            sx={{
+              position: 'sticky',
+              top: 65,
+              height: 'calc(100dvh - 65px)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
           >
-            <NavigationContent />
+            {skin === 'modern' ? (
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: collapsed ? 'center' : 'flex-end',
+                  px: 1,
+                  pt: 1,
+                }}
+              >
+                <IconButton
+                  aria-label={
+                    collapsed ? 'Expand navigation' : 'Collapse navigation'
+                  }
+                  aria-expanded={!collapsed}
+                  onClick={toggleNavigation}
+                >
+                  {collapsed ? <ChevronRightRounded /> : <ChevronLeftRounded />}
+                </IconButton>
+              </Box>
+            ) : null}
+            <NavigationContent
+              collapsed={collapsed}
+              onOpenAppearance={openAppearance}
+              onOpenHelp={openHelp}
+            />
           </Box>
         </Box>
 
@@ -537,9 +698,9 @@ export const AppShell = ({ children }: AppShellProps) => {
             flexGrow: 1,
             minWidth: 0,
             overflowWrap: 'anywhere',
-            px: { xs: 2, md: 4 },
+            px: { xs: 1.5, sm: 2, md: 3 },
             py: { xs: 3, md: 4 },
-            pb: 18,
+            pb: 40,
           }}
         >
           {auth.errorMessageLoadingUser ? (
@@ -556,6 +717,15 @@ export const AppShell = ({ children }: AppShellProps) => {
         </Container>
       </Box>
 
+      <AppearanceDialog
+        open={appearanceOpen}
+        onClose={() => setAppearanceOpen(false)}
+      />
+      {helpOpen ? (
+        <Suspense fallback={null}>
+          <HelpDialog onClose={() => setHelpOpen(false)} />
+        </Suspense>
+      ) : null}
       <LibrarySync />
       <FloatingMiniPlayer />
     </Box>

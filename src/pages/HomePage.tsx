@@ -1,206 +1,84 @@
-import {
-  Alert,
-  Button,
-  Grid,
-  Skeleton,
-  Stack,
-  Typography,
-} from '@mui/material';
-import { Link as RouterLink } from 'react-router-dom';
-import { ArtworkThumb } from '../components/common/ArtworkThumb';
-import { HeroButton, PageHero } from '../components/common/PageHero';
-import { SectionCard } from '../components/common/SectionCard';
+import { ShuffleRounded } from '@mui/icons-material';
+import { Link } from 'react-router-dom';
+import { MusicSearchForm } from '../components/common/MusicSearchForm';
+import { Alert, Button, Skeleton, Stack } from '@mui/material';
+import { Suspense, lazy } from 'react';
+import { useAtomValue } from 'jotai';
+import { skinAtom } from '../state/appearance';
 import { useLibrary } from '../hooks/useLibrary';
 import { useMiniPlayer } from '../hooks/useMiniPlayer';
+import { usePlaylistPlayback } from '../hooks/usePlaylistPlayback';
 import { usePlaylistsFeed } from '../hooks/usePlaylistsFeed';
 import { useSongsFeed } from '../hooks/useSongsFeed';
-import { formatPlaylistCardMetadata } from '../utils/playlistMetadata';
-import { formatSongCardMetadata } from '../utils/songMetadata';
-
+import { songQueue } from '../utils/songQueue';
+const Classic = lazy(() =>
+  import('../components/skins/classic/ClassicHomeView').then((m) => ({
+    default: m.ClassicHomeView,
+  }))
+);
+const Modern = lazy(() =>
+  import('../components/skins/modern/ModernHomeView').then((m) => ({
+    default: m.ModernHomeView,
+  }))
+);
 export const HomePage = () => {
-  const { addRecentSong, favoritePlaylists, favoriteSongs, recentSongs } =
-    useLibrary();
-  const { playTrack } = useMiniPlayer();
-  const {
-    songs,
-    isLoading: songsLoading,
-    error: songsError,
-    retry: retrySongs,
-  } = useSongsFeed(4);
-  const {
-    playlists,
-    isLoading: playlistsLoading,
-    error: playlistsError,
-    retry: retryPlaylists,
-  } = usePlaylistsFeed(3);
-
+  const skin = useAtomValue(skinAtom);
+  const library = useLibrary();
+  const { playQueue } = useMiniPlayer();
+  const songs = useSongsFeed(15);
+  const playlists = usePlaylistsFeed(15);
+  const playlistPlayer = usePlaylistPlayback();
+  const View = skin === 'classic' ? Classic : Modern;
   return (
     <Stack spacing={3}>
-      <PageHero
-        eyebrow=""
-        title="Listen, Browse, Publish, Download, Earn QORT and organize collect QDN audio from one focused workspace."
-        description=""
-        actions={
-          <>
-            <HeroButton component={RouterLink} to="/songs" variant="contained">
-              Browse All Audio
-            </HeroButton>
-            <HeroButton
-              component={RouterLink}
-              to="/playlists/all"
-              variant="outlined"
-            >
-              Explore Playlists
-            </HeroButton>
-          </>
-        }
-      />
-
-      {songsError ? (
+      <MusicSearchForm />
+      <Button
+        component={Link}
+        to="/discover"
+        startIcon={<ShuffleRounded />}
+        variant="outlined"
+        sx={{ alignSelf: 'flex-start' }}
+      >
+        Discover Mix
+      </Button>
+      {songs.error ? (
         <Alert
           severity="warning"
-          action={<Button onClick={retrySongs}>Retry songs</Button>}
+          action={<Button onClick={songs.retry}>Retry songs</Button>}
         >
-          {songsError}
+          {songs.error}
         </Alert>
       ) : null}
-      {playlistsError ? (
+      {playlists.error ? (
         <Alert
           severity="warning"
-          action={<Button onClick={retryPlaylists}>Retry playlists</Button>}
+          action={<Button onClick={playlists.retry}>Retry playlists</Button>}
         >
-          {playlistsError}
+          {playlists.error}
         </Alert>
       ) : null}
-      <Grid container spacing={2.5}>
-        {songsLoading
-          ? Array.from({ length: 2 }).map((_, index) => (
-              <Grid key={index} size={{ xs: 12, md: 6 }}>
-                <Skeleton variant="rounded" height={220} />
-              </Grid>
-            ))
-          : songs.slice(0, 2).map((track) => (
-              <Grid key={track.id} size={{ xs: 12, md: 6 }}>
-                <SectionCard
-                  originIdentifier={track.identifier}
-                  kicker={track.artist}
-                  title={track.title}
-                  media={
-                    <ArtworkThumb
-                      kind="song"
-                      publisher={track.publisher}
-                      identifier={track.identifier}
-                      title={track.title}
-                      size={84}
-                    />
-                  }
-                  body={formatSongCardMetadata({
-                    title: track.title,
-                    publisher: track.publisher,
-                    description: track.description,
-                    notesMaxLength: 80,
-                  })}
-                  meta={['AUDIO', track.publisher]}
-                  action={
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                      <Button
-                        variant="contained"
-                        fullWidth
-                        onClick={() =>
-                          (() => {
-                            addRecentSong(track);
-                            playTrack({
-                              key: `${track.publisher}:${track.identifier}`,
-                              id: track.id,
-                              identifier: track.identifier,
-                              publisher: track.publisher,
-                              service: 'AUDIO',
-                              title: track.title,
-                              artist: track.artist,
-                              context: track.publisher,
-                            });
-                          })()
-                        }
-                      >
-                        Play
-                      </Button>
-                      <Button
-                        component={RouterLink}
-                        to={`/songs/${encodeURIComponent(track.publisher)}/${encodeURIComponent(track.identifier)}`}
-                        variant="text"
-                        fullWidth
-                      >
-                        Open
-                      </Button>
-                    </Stack>
-                  }
-                />
-              </Grid>
-            ))}
-      </Grid>
-
-      <Grid container spacing={2.5}>
-        <Grid size={{ xs: 12, lg: 7 }}>
-          <SectionCard
-            kicker="YOUR SPACE"
-            title="Library activity at a glance"
-            body="Keep favorite songs and playlists nearby, then use recent playback history to jump back into the last listening session."
-            meta={[
-              `${favoriteSongs.length} saved songs`,
-              `${favoritePlaylists.length} saved playlists`,
-              `${recentSongs.length} recent plays`,
-            ]}
-          />
-        </Grid>
-        <Grid size={{ xs: 12, lg: 5 }}>
-          {playlistsLoading ? (
-            <Skeleton variant="rounded" height={220} />
-          ) : playlists[0] ? (
-            <SectionCard
-              originIdentifier={playlists[0].identifier}
-              kicker="LATEST PLAYLIST"
-              title={playlists[0].title}
-              media={
-                <ArtworkThumb
-                  kind="playlist"
-                  publisher={playlists[0].publisher}
-                  identifier={playlists[0].identifier}
-                  title={playlists[0].title}
-                  size={92}
-                />
-              }
-              body={formatPlaylistCardMetadata({
-                title: playlists[0].title,
-                publisher: playlists[0].publisher,
-                description: playlists[0].description,
-                publishedDate: playlists[0].publishedDate,
-                songCount: playlists[0].songCount,
-              })}
-              meta={[
-                'PLAYLIST',
-                ...(typeof playlists[0].songCount === 'number'
-                  ? [`${playlists[0].songCount} tracks`]
-                  : []),
-                playlists[0].publisher,
-              ]}
-              action={
-                <Button
-                  component={RouterLink}
-                  to={`/playlists/${encodeURIComponent(playlists[0].publisher)}/${encodeURIComponent(playlists[0].identifier)}`}
-                  variant="contained"
-                  fullWidth
-                >
-                  Open playlist
-                </Button>
-              }
-            />
-          ) : (
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              {songsError || playlistsError || 'No playlists found yet.'}
-            </Typography>
-          )}
-        </Grid>
-      </Grid>
+      {playlistPlayer.error ? (
+        <Alert severity="warning">{playlistPlayer.error}</Alert>
+      ) : null}
+      <Suspense fallback={<Skeleton variant="rounded" height={220} />}>
+        <View
+          songs={songs.songs}
+          playlists={playlists.playlists}
+          songsLoading={songs.isLoading}
+          playlistsLoading={playlists.isLoading}
+          playlistLoadingId={playlistPlayer.loadingId}
+          libraryCounts={{
+            songs: library.favoriteSongs?.length ?? 0,
+            playlists: library.favoritePlaylists?.length ?? 0,
+            recent: library.recentSongs?.length ?? 0,
+          }}
+          onPlaySong={(song, index) => {
+            library.addRecentSong(song);
+            playQueue(songQueue(songs.songs.slice(0, 15)), index);
+          }}
+          onPlayPlaylist={(playlist) => void playlistPlayer.play(playlist)}
+        />
+      </Suspense>
     </Stack>
   );
 };
